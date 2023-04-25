@@ -1,0 +1,19 @@
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotContent
+metadata:
+  finalizers:
+  - snapshot.storage.kubernetes.io/volumesnapshotcontent-bound-protection
+  name: snapcontent-pre-snapshot-dataset
+spec:
+  deletionPolicy: Delete
+  driver: zfs.csi.openebs.io
+  volumeSnapshotClassName: zfspv-snapclass
+  volumeSnapshotRef:
+    apiVersion: snapshot.storage.k8s.io/v1
+    kind: VolumeSnapshot
+    name: pre-snap
+    namespace: default
+status:
+  readyToUse: true
+  restoreSize: 0
+  snapshotHandle: pre-snapshot-dataset@snapshot-pre-snapshot-dataset

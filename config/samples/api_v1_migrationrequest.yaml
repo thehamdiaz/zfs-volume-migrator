@@ -1,0 +1,13 @@
+apiVersion: api.k8s.zfs-volume-migrator.io/v1
+kind: MigrationRequest
+metadata:
+  labels:
+    app.kubernetes.io/name: migrationrequest
+    app.kubernetes.io/instance: migrationrequest-sample
+    app.kubernetes.io/part-of: zfs-volume-migrator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: zfs-volume-migrator
+  name: migrationrequest-sample
+spec:
+  # TODO(user): Add fields here
+  podName: "fio"

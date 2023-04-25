@@ -1,0 +1,33 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: manager-role
+rules:
+- apiGroups:
+  - api.k8s.zfs-volume-migrator.io
+  resources:
+  - migrationrequests
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - api.k8s.zfs-volume-migrator.io
+  resources:
+  - migrationrequests/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - api.k8s.zfs-volume-migrator.io
+  resources:
+  - migrationrequests/status
+  verbs:
+  - get
+  - patch
+  - update

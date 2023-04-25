@@ -1,0 +1,31 @@
+# permissions for end users to edit migrationrequests.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: migrationrequest-editor-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: zfs-volume-migrator
+    app.kubernetes.io/part-of: zfs-volume-migrator
+    app.kubernetes.io/managed-by: kustomize
+  name: migrationrequest-editor-role
+rules:
+- apiGroups:
+  - api.k8s.zfs-volume-migrator.io
+  resources:
+  - migrationrequests
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - api.k8s.zfs-volume-migrator.io
+  resources:
+  - migrationrequests/status
+  verbs:
+  - get
