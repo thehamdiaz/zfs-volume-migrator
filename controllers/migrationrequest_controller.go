@@ -75,25 +75,32 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	// Create the VolumeSnapshotClass
-	/*vsc := &snapv1.VolumeSnapshotClass{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "migration-vsc",
-			Namespace: migrationRequest.Namespace,
-		},
-		Driver:         "zfs.csi.openebs.io",
-		DeletionPolicy: "Delete",
-		Parameters: map[string]string{
-			"snapshotNamePrefix": "migration-snapshot-",
-		},
+	// Check if the VolumeSnapshotClass already exists
+	vscName := "migration-vsc"
+	vscNamespace := migrationRequest.Namespace
+	existingVSC := &snapv1.VolumeSnapshotClass{}
+	err := r.Get(ctx, types.NamespacedName{Name: vscName, Namespace: vscNamespace}, existingVSC)
+
+	if err != nil {
+		// Create the VolumeSnapshotClass
+		vsc := &snapv1.VolumeSnapshotClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      vscName,
+				Namespace: vscNamespace,
+			},
+			Driver:         "zfs.csi.openebs.io",
+			DeletionPolicy: "Delete",
+			Parameters: map[string]string{
+				"snapshotNamePrefix": "migration-snapshot-",
+			},
+		}
+
+		if err := r.Create(ctx, vsc); err != nil {
+			l.Error(err, "unable to create VolumeSnapshotClass")
+			return ctrl.Result{}, err
+		}
 	}
 
-	if err := r.Create(ctx, vsc); err != nil {
-		l.Error(err, "unable to create VolumeSnapshotClass")
-		return ctrl.Result{}, err
-	}*/
-
-	classname := "migration-vsc"
 	// Create the VolumeSnapshot
 	vs := &snapv1.VolumeSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
@@ -104,7 +111,7 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			Source: snapv1.VolumeSnapshotSource{
 				PersistentVolumeClaimName: &pvc.Name,
 			},
-			VolumeSnapshotClassName: &classname,
+			VolumeSnapshotClassName: &vscName,
 		},
 	}
 
