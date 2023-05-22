@@ -4,7 +4,7 @@ metadata:
   name: fio2
 spec:
   tolerations:
-  - key: "node-role.kubernetes.io/control-plane"
+  - key: "node-role.kubernetes.io/worker1"
     operator: "Exists"
     effect: "NoSchedule"
   restartPolicy: Never
@@ -20,4 +20,4 @@ spec:
   volumes:
   - name: fio-vol
     persistentVolumeClaim:
-      claimName: pre-pvc
+      claimName: restored-pvc

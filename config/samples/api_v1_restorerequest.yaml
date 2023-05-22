@@ -1,0 +1,24 @@
+apiVersion: api.k8s.zfs-volume-migrator.io/v1
+kind: RestoreRequest
+metadata:
+  labels:
+    app.kubernetes.io/name: restorerequest
+    app.kubernetes.io/instance: restorerequest-sample
+    app.kubernetes.io/part-of: zfs-volume-migrator
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: zfs-volume-migrator
+  name: restorerequest-sample
+spec:
+  #Capacity         resource.Quantity                    `json:"capacity"`
+	#AccessModes      []corev1.PersistentVolumeAccessMode  `json:"accessModes"`
+	#ReclaimPolicy    corev1.PersistentVolumeReclaimPolicy `json:"reclaimPolicy"`
+	#StorageClassName string                               `json:"storageClassName"`
+	#PVName           string                               `json:"pvTemplateName"`
+	#PVTemplateSpec   corev1.PersistentVolumeSpec          `json:"pvTemplateSpec"`
+	#PVLabels         map[string]string                    `json:"pvLabels"`
+	#PVCName          string                               `json:"pvcTemplateName"`
+	#PVCResources     corev1.ResourceRequirements          `json:"pvcResources"`
+	#PVCSelector      metav1.LabelSelector                 `json:"pvcSelector"`
+	#ZFSDatasetName   string                               `json:"zfsDatasetName"`
+	#ZFSPoolName      string                               `json:"zfsPoolName"`
+	#TargetNodeName   string                               `json:"targetNodeName"`

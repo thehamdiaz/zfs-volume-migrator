@@ -17,4 +17,13 @@ resources:
   kind: MigrationRequest
   path: github.com/thehamdiaz/first-controller.git/api/v1
   version: v1
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: k8s.zfs-volume-migrator.io
+  group: api
+  kind: RestoreRequest
+  path: github.com/thehamdiaz/first-controller.git/api/v1
+  version: v1
 version: "3"
