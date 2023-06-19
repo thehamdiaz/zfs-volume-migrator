@@ -79,7 +79,7 @@ kubectl apply -f https://docs.projectcalico.org/v3.8/manifests/calico.yaml
 
 1. Prerequisites:
 
-Before installing ZFS driver please make sure your Kubernetes Cluster must meet the following prerequisites:
+Before installing ZFS driver we need to make sure that the Kubernetes Cluster meets the following prerequisites:
 
 * all the nodes must have zfs utils installed
 * ZPOOL has been setup for provisioning the volume
