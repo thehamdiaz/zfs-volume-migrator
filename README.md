@@ -1,4 +1,4 @@
-# Steps to build the project envirement
+# Steps to build the project environment
 
 You need to have 3 nodes (virtual machines) with 4GB of RAM and 2vCPU and 40GB of storage each.
 
