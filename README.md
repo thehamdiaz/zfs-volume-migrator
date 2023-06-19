@@ -60,6 +60,7 @@ kubeadm join x.x.x.x:6443 --token <token> --discovery-token-ca-cert-hash <hash>
 ```
 
 4. Accessing Cluster:
+   
 from the master node you can communicate with the cluster components using the `kubectl` interface. In order to communicate, you need the kubernetes cluster config file to be placed in the home directory of the user from where you want to access the cluster.
 Once the cluster is created, a file named admin.conf will be generated in the `/etc/kubernetes` directory. This file has to be copied to the home directory of the target user.
 Execute the below commands on the master node from the non-root user to access the cluster from that respective user:
@@ -113,7 +114,8 @@ $ kubectl get pods -n kube-system -l role=openebs-zfs
 
 # Setting up the dev environment (the workstation)
 
-1. Accessing Cluster from a workstation: 
+1. Accessing Cluster from a workstation:
+   
 In order to allow access the cluster from a workstation outside the kubernetes cluster you need to:
 
 Make sure that the your workstation can communicate with the control plane
@@ -132,6 +134,7 @@ scp username@controlplane:/home/username/.kube /home/workstation_user/.kube
 ```
 
 2. Tools installation:
+   
 Install go:
 ```
 $ curl -OL https://golang.org/dl/go1.20.5.linux-amd64.tar.gz
