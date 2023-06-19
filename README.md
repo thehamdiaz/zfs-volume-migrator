@@ -47,6 +47,7 @@ $ apt-get update
 $ apt-get install cri-o cri-o-runc
 ```
 3. Install the control plane:
+   
 In the master node, execute `kubeadm init` command to deploy control plane components:
 ```
 $ kubeadm init --pod-network-cidr=192.168.2.0/16
