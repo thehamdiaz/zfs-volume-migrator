@@ -4,15 +4,15 @@ metadata:
   finalizers:
   - zfs.openebs.io/finalizer
   labels:
-    kubernetes.io/nodename: controlplane
-  name: pre-dataset
+    kubernetes.io/nodename: worker1
+  name: mydataset1
   namespace: openebs
 spec:
   capacity: "2147483648"
   compression: "off"
   dedup: "off"
   fsType: zfs
-  ownerNodeID: controlplane
+  ownerNodeID: worker1
   poolName: zfspv-pool
   volumeType: DATASET
 status:

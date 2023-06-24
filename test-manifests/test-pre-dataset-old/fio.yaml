@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: fio2
+  name: fio
 spec:
   tolerations:
   - key: "node-role.kubernetes.io/worker1"
@@ -20,4 +20,4 @@ spec:
   volumes:
   - name: fio-vol
     persistentVolumeClaim:
-      claimName: restored-pvc
+      claimName: my-restored-pvc

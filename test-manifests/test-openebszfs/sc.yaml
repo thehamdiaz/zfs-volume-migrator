@@ -9,3 +9,9 @@ parameters:
   fstype: "zfs"
   poolname: "zfspv-pool"
 provisioner: zfs.csi.openebs.io
+allowedTopologies:
+- matchLabelExpressions:
+  - key: kubernetes.io/hostname
+    values:
+      - worker1
+      - worker2

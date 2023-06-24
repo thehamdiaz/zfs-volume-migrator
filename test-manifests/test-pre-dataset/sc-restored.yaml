@@ -1,0 +1,9 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: openebs-zfspv-restored
+allowVolumeExpansion: true
+parameters:
+  poolname: "zfspv-pool"
+  fstype: "zfs"
+provisioner: zfs.csi.openebs.io

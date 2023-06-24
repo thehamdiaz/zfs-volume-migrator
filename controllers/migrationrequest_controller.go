@@ -18,17 +18,24 @@ package controllers
 
 import (
 	"context"
+	//"time"
 
+	//snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
+	apiv1 "github.com/thehamdiaz/first-controller.git/api/v1"
+	corev1 "k8s.io/api/core/v1"
+
+	//"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+
+	//"k8s.io/apimachinery/pkg/types"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	apiv1 "github.com/thehamdiaz/first-controller.git/api/v1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // MigrationRequestReconciler reconciles a MigrationRequest object
@@ -54,12 +61,21 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	l := log.FromContext(ctx)
 
 	// Fetch the MigrationRequest object
-	var migrationRequest apiv1.MigrationRequest
-	if err := r.Get(ctx, req.NamespacedName, &migrationRequest); err != nil {
-		l.Error(err, "unable to fetch MigrationRequest")
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+	migrationRequest := &apiv1.MigrationRequest{}
+	if err := r.Get(ctx, req.NamespacedName, migrationRequest); err != nil {
+		if errors.IsNotFound(err) {
+			// Object not found Return and don't requeue
+			return ctrl.Result{}, nil
+		}
+		// Error reading the object - requeue the request.
+		return ctrl.Result{}, err
 	}
 
+	// Check if the RestoreRequest is already completed
+	if migrationRequest.Status.SnapshotCreated == "True" {
+		l.Info("MigrationRequest is already completed")
+		return ctrl.Result{}, nil
+	}
 	// Fetch the pod
 	var pod corev1.Pod
 	if err := r.Get(ctx, types.NamespacedName{Namespace: migrationRequest.Namespace, Name: migrationRequest.Spec.PodName}, &pod); err != nil {
@@ -144,11 +160,11 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 		// Update the status of the MigrationRequest object
 		migrationRequest.Status.SnapshotCreated = "True"
-		if err := r.Status().Update(ctx, &migrationRequest); err != nil {
+		if err := r.Status().Update(ctx, migrationRequest); err != nil {
 			l.Error(err, "unable to update MigrationRequest status")
 			return ctrl.Result{}, err
-		}
-	*/
+		}*/
+
 	// Create RestoreRequest object for testing
 	/*restoreReqRef, _ := createRestoreRequestObject(&pv, &pvc, "restoredPv", "restoredPvc", "worker1")
 	if err := r.Create(ctx, restoreReqRef); err != nil {
@@ -173,7 +189,7 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			PVName:           "restored-pv",
 			PVCName:          "restored-pvc",
 			PVCResources:     pvc.Spec.Resources,
-			ZFSDatasetName:   "dataset1",
+			ZFSDatasetName:   "exdataset",
 			ZFSPoolName:      "zfspv-pool",
 			TargetNodeName:   "worker1",
 		},

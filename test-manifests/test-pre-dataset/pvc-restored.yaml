@@ -1,7 +1,7 @@
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
-  name: csi-zfspv1
+  name: pvc-restored
 spec:
   storageClassName: openebs-zfspv
   accessModes:

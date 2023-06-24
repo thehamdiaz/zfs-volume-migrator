@@ -1,0 +1,31 @@
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: pv-restored # some unique name
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 2Gi # size of the volume
+  claimRef:
+    apiVersion: v1
+    kind: PersistentVolumeClaim
+    name: pvc-restored # name of pvc which can claim this PV
+    namespace: default # namespace for the pvc
+  csi:
+    driver: zfs.csi.openebs.io
+    fsType: zfs
+    volumeAttributes:
+      openebs.io/poolname: zfspv-pool # change the pool name accordingly
+    volumeHandle: restored-dataset # This should be same as the zfs volume name
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - worker1 # change the hostname where volume is present
+  persistentVolumeReclaimPolicy: Delete
+  storageClassName: openebs-zfspv
+  volumeMode: Filesystem

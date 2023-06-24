@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fio-restored
+  labels:
+    name: fio-restored
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: fio-restored
+  template:
+    metadata:
+      labels:
+        name: fio-restored
+    spec:
+      containers:
+        - resources:
+          name: perfrunner
+          image: openebs/tests-fio
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh"]
+          args: ["-c", "while true ;do sleep 50; done"]
+          volumeMounts:
+            - mountPath: /datadir
+              name: fio-vol
+      volumes:
+        - name: fio-vol
+          persistentVolumeClaim:
+            claimName: restored-pvc

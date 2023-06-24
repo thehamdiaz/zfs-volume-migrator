@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: fio
+  name: my-fio1
 spec:
   restartPolicy: Never
   containers:
@@ -16,4 +16,4 @@ spec:
   volumes:
   - name: fio-vol
     persistentVolumeClaim:
-      claimName: csi-zfspv1
+      claimName: my-pvc1
