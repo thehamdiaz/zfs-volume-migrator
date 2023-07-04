@@ -20,7 +20,7 @@ import (
 	"context"
 	//"time"
 
-	//snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
+	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	apiv1 "github.com/thehamdiaz/first-controller.git/api/v1"
 	corev1 "k8s.io/api/core/v1"
 
@@ -41,7 +41,17 @@ import (
 // MigrationRequestReconciler reconciles a MigrationRequest object
 type MigrationRequestReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme     *runtime.Scheme
+	CachedData map[string]CachedResources
+}
+
+type CachedResources struct {
+	Pod                   *corev1.Pod
+	PersistentVolume      *corev1.PersistentVolume
+	PersistentVolumeClaim *corev1.PersistentVolumeClaim
+	VolumeSnapshotClass   *snapv1.VolumeSnapshotClass
+	ConfigMap             *corev1.ConfigMap
+	Secret                *corev1.Secret
 }
 
 //+kubebuilder:rbac:groups=api.k8s.zfs-volume-migrator.io,resources=migrationrequests,verbs=get;list;watch;create;update;patch;delete

@@ -93,8 +93,9 @@ func main() {
 	}
 
 	if err = (&controllers.MigrationRequestReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:     mgr.GetClient(),
+		Scheme:     mgr.GetScheme(),
+		CachedData: make(map[string]controllers.CachedResources), // Initialize the cached data map
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "MigrationRequest")
 		os.Exit(1)
