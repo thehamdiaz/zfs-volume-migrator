@@ -1,0 +1,27 @@
+# permissions for end users to view restorerequests.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: restorerequest-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: zfs-volume-migrator
+    app.kubernetes.io/part-of: zfs-volume-migrator
+    app.kubernetes.io/managed-by: kustomize
+  name: restorerequest-viewer-role
+rules:
+- apiGroups:
+  - api.k8s.zfs-volume-migrator.io
+  resources:
+  - restorerequests
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - api.k8s.zfs-volume-migrator.io
+  resources:
+  - restorerequests/status
+  verbs:
+  - get

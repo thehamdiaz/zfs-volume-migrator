@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
+	openebszfsv1 "github.com/openebs/zfs-localpv/pkg/apis/openebs.io/zfs/v1"
 	apiv1 "github.com/thehamdiaz/first-controller.git/api/v1"
 	"github.com/thehamdiaz/first-controller.git/controllers"
 	//+kubebuilder:scaffold:imports
@@ -45,6 +46,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	snapv1.AddToScheme(scheme)
+	openebszfsv1.AddToScheme(scheme)
 	utilruntime.Must(apiv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
@@ -95,6 +97,13 @@ func main() {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "MigrationRequest")
+		os.Exit(1)
+	}
+	if err = (&controllers.RestoreRequestReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "RestoreRequest")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder

@@ -1,0 +1,19 @@
+apiVersion: zfs.openebs.io/v1
+kind: ZFSVolume
+metadata:
+  finalizers:
+  - zfs.openebs.io/finalizer
+  labels:
+    kubernetes.io/nodename: worker1
+  name: mydataset1
+  namespace: openebs
+spec:
+  capacity: "2147483648"
+  compression: "off"
+  dedup: "off"
+  fsType: zfs
+  ownerNodeID: worker1
+  poolName: zfspv-pool
+  volumeType: DATASET
+status:
+  state: Ready

@@ -31,3 +31,29 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - api.k8s.zfs-volume-migrator.io
+  resources:
+  - restorerequests
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - api.k8s.zfs-volume-migrator.io
+  resources:
+  - restorerequests/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - api.k8s.zfs-volume-migrator.io
+  resources:
+  - restorerequests/status
+  verbs:
+  - get
+  - patch
+  - update

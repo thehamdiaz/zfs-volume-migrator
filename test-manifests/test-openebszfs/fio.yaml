@@ -16,4 +16,4 @@ spec:
   volumes:
   - name: fio-vol
     persistentVolumeClaim:
-      claimName: csi-zfspv
+      claimName: csi-zfspv1

@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-restored-pv1
+spec:
+  storageClassName: openebs-zfspv
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  csi:
+    driver: zfs.csi.openebs.io
+    volumeHandle: mydataset1
+    volumeAttributes:
+      openebs.io/poolname: zfspv-pool
+      datasetName: mydataset1
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - worker1
