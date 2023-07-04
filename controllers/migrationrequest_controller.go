@@ -82,57 +82,58 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	// Check if the RestoreRequest is already completed
-	if migrationRequest.Status.SnapshotCreated == "True" {
+	if migrationRequest.Status.MigrationComplete == "True" {
 		l.Info("MigrationRequest is already completed")
 		return ctrl.Result{}, nil
 	}
-	// Fetch the pod
-	var pod corev1.Pod
-	if err := r.Get(ctx, types.NamespacedName{Namespace: migrationRequest.Namespace, Name: migrationRequest.Spec.PodName}, &pod); err != nil {
-		l.Error(err, "unable to fetch Pod")
-		return ctrl.Result{}, err
+	// Check if all the snapshots have been sent (sending completed)
+	if migrationRequest.Status.AllSnapshotsCreated == "True" {
+		l.Info("All the snapshots have been sent")
+		return ctrl.Result{}, nil
 	}
 
-	// Fetch the PVC
-	var pvc corev1.PersistentVolumeClaim
-	if err := r.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pod.Spec.Volumes[0].PersistentVolumeClaim.ClaimName}, &pvc); err != nil {
-		l.Error(err, "unable to fetch PVC")
-		return ctrl.Result{}, err
-	}
-
-	// Fetch the PV
-	var pv corev1.PersistentVolume
-	if err := r.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pvc.Spec.VolumeName}, &pv); err != nil {
-		l.Error(err, "unable to fetch PV")
-		return ctrl.Result{}, err
-	}
-	/*
-		// Check if the VolumeSnapshotClass already exists
-		vscName := "migration-vsc"
-		vscNamespace := migrationRequest.Namespace
-		existingVSC := &snapv1.VolumeSnapshotClass{}
-		err := r.Get(ctx, types.NamespacedName{Name: vscName, Namespace: vscNamespace}, existingVSC)
-
+	// Retrieve or use the cached data
+	cachedData, exists := r.CachedData[req.Name]
+	if !exists {
+		// Cached data doesn't exist, fetch or create it
+		// Fetch the Pod
+		var pod corev1.Pod
+		if err := r.Get(ctx, types.NamespacedName{Namespace: migrationRequest.Namespace, Name: migrationRequest.Spec.PodName}, &pod); err != nil {
+			l.Error(err, "unable to fetch Pod")
+			return ctrl.Result{}, err
+		}
+		// Fetch the PersistentVolumeClaim
+		var pvc corev1.PersistentVolumeClaim
+		if err := r.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pod.Spec.Volumes[0].PersistentVolumeClaim.ClaimName}, &pvc); err != nil {
+			l.Error(err, "unable to fetch PVC")
+			return ctrl.Result{}, err
+		}
+		// Fetch the PersistentVolume
+		var pv corev1.PersistentVolume
+		if err := r.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pvc.Spec.VolumeName}, &pv); err != nil {
+			l.Error(err, "unable to fetch PV")
+			return ctrl.Result{}, err
+		}
+		// Create the VolumeSnapshotClass
+		vsc, err := r.ensureVolumeSnapshotClass(ctx, migrationRequest)
 		if err != nil {
-			// Create the VolumeSnapshotClass
-			vsc := &snapv1.VolumeSnapshotClass{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      vscName,
-					Namespace: vscNamespace,
-				},
-				Driver:         "zfs.csi.openebs.io",
-				DeletionPolicy: "Delete",
-				Parameters: map[string]string{
-					"snapshotNamePrefix": "migration-snapshot-",
-				},
-			}
-
-			if err := r.Create(ctx, vsc); err != nil {
-				l.Error(err, "unable to create VolumeSnapshotClass")
-				return ctrl.Result{}, err
-			}
+			l.Error(err, "unable to create VolumeSnapshotClass")
+			return ctrl.Result{}, err
+		}
+		// Create the ConfigMap
+		configMap, err := r.createConfigMapObject(ctx, migrationRequest)
+		if err != nil {
+			l.Error(err, "unable to create the ConfigMap")
+			return ctrl.Result{}, err
 		}
 
+		secret, err := r.createSecretObject(ctx, migrationRequest)
+		if err != nil {
+			l.Error(err, "unable to create the secret")
+			return ctrl.Result{}, err
+		}
+	}
+	/*
 		// Create the VolumeSnapshot
 		vs := &snapv1.VolumeSnapshot{
 			ObjectMeta: metav1.ObjectMeta{
@@ -240,6 +241,89 @@ func createRestoreRequestObject(pv *corev1.PersistentVolume, pvc *corev1.Persist
 	}
 
 	return restoreReqRef, nil
+}
+
+func (r *MigrationRequestReconciler) ensureVolumeSnapshotClass(ctx context.Context, migrationRequest *apiv1.MigrationRequest) (*snapv1.VolumeSnapshotClass, error) {
+	vscName := "migration-vsc"
+	vscNamespace := migrationRequest.Namespace
+	existingVSC := &snapv1.VolumeSnapshotClass{}
+	err := r.Get(ctx, types.NamespacedName{Name: vscName, Namespace: vscNamespace}, existingVSC)
+	if err == nil {
+		// VolumeSnapshotClass already exists, return the existing one
+		return existingVSC, nil
+	}
+
+	// Create the VolumeSnapshotClass
+	vsc := &snapv1.VolumeSnapshotClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      vscName,
+			Namespace: vscNamespace,
+		},
+		Driver:         "zfs.csi.openebs.io",
+		DeletionPolicy: "Delete",
+		Parameters: map[string]string{
+			"snapshotNamePrefix": "migration-snapshot-",
+		},
+	}
+
+	if err := r.Create(ctx, vsc); err != nil {
+		return nil, err
+	}
+
+	return vsc, nil
+}
+
+func (r *MigrationRequestReconciler) createConfigMapObject(ctx context.Context, migrationRequest *apiv1.MigrationRequest) (*corev1.ConfigMap, error) {
+	configMap := &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "snapshot-migration-config-",
+		},
+		Data: map[string]string{
+			"previous":      "None",
+			"snapshot":      "None",
+			"user":          migrationRequest.Spec.Destination.User,
+			"remotePool":    migrationRequest.Spec.Destination.RemotePool,
+			"remoteDataset": migrationRequest.Spec.Destination.RemoteDataset,
+			"remoteHost":    migrationRequest.Spec.Destination.RemoteHost,
+		},
+	}
+
+	err := r.Create(ctx, configMap)
+	if err != nil {
+		// Handle the error
+		return nil, err
+	}
+
+	return configMap, nil
+}
+
+func (r *MigrationRequestReconciler) createSecretObject(ctx context.Context, migrationRequest *apiv1.MigrationRequest) (*corev1.Secret, error) {
+	secret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Secret",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "ssh-keys-secret",
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{
+			"id_rsa":     []byte("LS0tLS1CRUdJTiBPUEVOU1NIIFBSSVZBVEUgS0VZLS0tLS0KYjNCbGJuTnphQzFyWlhrdGRqRUFBQUFBQkc1dmJtVUFBQUFFYm05dVpRQUFBQUFBQUFBQkFBQUJsd0FBQUFkemMyZ3RjbgpOaEFBQUFBd0VBQVFBQUFZRUFvNGxDT3JqTnVyQTdhbmx5bkNUYmNMUE5jSlE0K2dhWkhtNmNsbmVPMnRSRkx2WkQ0S1JlCnRtcmJ1Mng4OUNOaXdMNHZsNGI5dkxaelRueGNRQml5ZmkrTmFLdWZCZGZBVVBNTVFTWWtreGRsTlFFcWVGY1Z6UndFUWIKODAxUlpDaVBWVHEyZUVXZDVLVDMvMENWRldaWkdzNVdqZC8rS3RzdjBaRnE4djBGaE5mcnVnWEtaaUxQNVRrdHE5MkZzagoyOTQ3c29BZ2xKV2J1UnNKNXFRWnpUdXdodTRJcWFzNFYwdFRLT05FaGlNYit2cWcvdjlwK2lIa2tUeGU3Y3A5RDN5UGlyCmltSDNQb1BHRlZ0MTZNS2VjOHEvMnZnK2FhUDhMcWlBZmVaWm4rNzFPdmhUb0RXdXp6Vkt4MktScjgxbTFwZHFoVml1eVEKaXhSeFhOaWNmUm5iRkRsWERxQlFYb2FmUnZFUmVrR1VVNFFtSU50VVBKTjcxc1FydTF2dmlGakxXenBxbm5iN3phYkxjWAoyNUxvSjA1RGFrNFdoTGMrR1UxUFYyMmw0Z2RlSkZlTEVFaGNmQnhlUUphMFpTbjB2aUp6WFZ6WnN2N3FyZlRLV1ZmWXZXCmx2VmtGdUk5MXl2VmRQTDdJWHZOb1EvUzlDUGhYbFhzakN3WjNNNFBBQUFGaU1YcHVBWEY2YmdGQUFBQUIzTnphQzF5YzIKRUFBQUdCQUtPSlFqcTR6YnF3TzJwNWNwd2syM0N6elhDVU9Qb0dtUjV1bkpaM2p0clVSUzcyUStDa1hyWnEyN3RzZlBRagpZc0MrTDVlRy9ieTJjMDU4WEVBWXNuNHZqV2lybndYWHdGRHpERUVtSkpNWFpUVUJLbmhYRmMwY0JFRy9OTlVXUW9qMVU2CnRuaEZuZVNrOS85QWxSVm1XUnJPVm8zZi9pcmJMOUdSYXZMOUJZVFg2N29GeW1ZaXorVTVMYXZkaGJJOXZlTzdLQUlKU1YKbTdrYkNlYWtHYzA3c0lidUNLbXJPRmRMVXlqalJJWWpHL3I2b1A3L2Fmb2g1SkU4WHUzS2ZROThqNHE0cGg5ejZEeGhWYgpkZWpDbm5QS3Y5cjRQbW1qL0M2b2dIM21XWi91OVRyNFU2QTFyczgxU3NkaWthL05adGFYYW9WWXJza0lzVWNWelluSDBaCjJ4UTVWdzZnVUY2R24wYnhFWHBCbEZPRUppRGJWRHlUZTliRUs3dGI3NGhZeTFzNmFwNTIrODJteTNGOXVTNkNkT1EycE8KRm9TM1BobE5UMWR0cGVJSFhpUlhpeEJJWEh3Y1hrQ1d0R1VwOUw0aWMxMWMyYkwrNnEzMHlsbFgyTDFwYjFaQmJpUGRjcgoxWFR5K3lGN3phRVAwdlFqNFY1VjdJd3NHZHpPRHdBQUFBTUJBQUVBQUFHQUptSmtzN0RGeFJCeFdidjR6VEtQZVNRU3o5CjVTZzBrQ0xwVHExeHhuNFBBYTd2dHBralF5Y09HakFwcGp0OUFJY1ZJU2pKL29OWitqYitRYnFRWEMrNEJBMGpVYUpiNXUKeXZGSlNvOWYzVkNMOWtWNFNQZXp5OGxNTEh4ck02cStZalFtOTkvYnZsWkJIZWpjQ0VYWm9BeHh4d1QydW9Wam5OUHdUQgpWQmhVYjhwWWIzakZlWFNwVkZXMzVST2hPbVZvaVNmWUs2WXZXOHI5VnJYUUhlZG9BUW5wTUhZSCtxUVQ4U1hWSCt0dmROCnJYcWZTRXI5L25KdkdqSFAzRU4rOS90R2pwTzI3TEMxdlQxREo3eS9wOTBSK0JESWZHTjBJQWQ5RVVtdFVPY3p5ckMxWGkKRm9OTzhFT1dHRzhIY25xRld2a0hJdlVSRGc4Z1Y2S1psU3hJZXlXSzhDdEpNdmM4ZVdFdHQ5UnlWYlhtdFJPcEhlRlBqeQpCOWdvZGJSY1g0dExQdUE0TEIxbTRWaDlFK1pHbG1DcDQramhFQUJBelF6dmNzY2JkUnJZZHRsbWhwN1ZEQ3JRbE9OZ0FaCkRYNU5xM1JkUnBtVkNRbmlIRm1TTm1wQjhSR1VHRHl2U2k4WXBrRGFmWVVtUEw3dkQ5Yk51Tnl4NktYMjl5VWwrUkFBQUEKd1FDb3hTdjNiS2RtK04zWHkwaFNmc1NvMDVvTlNCNHBOOExQNVY5WlNLRzFrZlJpNWk0blJFY3N1bWo2WDVjRXQ4SytWNApHV0Q3OXRqc1crcDMwVUlKZUV5aVRDN2ZqQStDeWdoYThnd1U1Y1gvSDQyMEtWWWhpL1B6TXhHWUppUVhxbGZnSG52bXE2CkpVL1M5emRJOU1DcDMzeGlrWjE4dXg2ZVFBYVhxNS9YMEdUSEhkblJBZG0vWGFIYUs5Umt6bEErdy9xTlRtR1czcEJySG8KU0hNc2F3ZDd0Sit3cWRnd1NjS2ozaEgxbGhhTEFZRnd4czIrK3lvUkpKb3BhVFFJZ0FBQURCQU1QVkF5ZWhYcEtkQWtUeQpIVjdoSEg4a0RGYXBuQ0x4OEd1czY0emFjZFROZ2ZDSGZWcjhYV0U3MG9HN1dIVDBVWDNnck5TdmpCdmR6WTdpK1dTZjVYCll2eEptRnljeE0yR3BXV2ZvdHdqRUgvd0dCemhua0hFU2VkOWo0WERjZ0JFWU1GdVYrUjM4aFYzRXRLcE5mdnlDK1pqZDUKQll6Ym1IMHNtdVcwWDZhQ0ZhTktUeTBZL1ZiMXJhNVN1RURiNFVLWGI2V1BNSmNodTZWdDBRKzVIUktRRG9rdjRHMGVzRQpjWkQ3NDVmYnVseHNESUlaaXBYQlN0WWVNcEFPNkFQd0FBQU1FQTFjZ0t0Rm5JTkhkMjJ1cjVVa0pROWN4OGZwYTZLalpBCkc4M1JHaUxuaUw1ZE1aVGlaSk5tZ3p5WXBuSE1GT3lrMk9YTzNMVG1DYWxJL1pGSWxuY0l3bjEvdWlUbmZmMlBoUm5Ec3UKL3M2VVdHSE84TmtDdmprZU8xSXFuNjU3L21QQTVWUjZMb0hKSVlZUHFoNG5yVko3K2toVTFsUkc5REhUaTVtYXVkTDZUZApGaDBWK1RtbnVRVTl0Z2NsYmtUWEdmbk5TaFJMVlJPdDhLVW1PSlNBdnp0TktXbVpIN1Y5N3NkdVhhNkR2akFmY2Nqc0lkCkpkVFQ5ZTd0aWRHVDR4QUFBQURISnZiM1JBZW1aekxYQnZaQUVDQXdRRkJnPT0KLS0tLS1FTkQgT1BFTlNTSCBQUklWQVRFIEtFWS0tLS0tCg"),
+			"id_rsa.pub": []byte("c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFCZ1FDamlVSTZ1TTI2c0R0cWVYS2NKTnR3czgxd2xEajZCcGtlYnB5V2Q0N2ExRVV1OWtQZ3BGNjJhdHU3Ykh6MEkyTEF2aStYaHYyOHRuTk9mRnhBR0xKK0w0MW9xNThGMThCUTh3eEJKaVNURjJVMUFTcDRWeFhOSEFSQnZ6VFZGa0tJOVZPclo0Uloza3BQZi9RSlVWWmxrYXpsYU4zLzRxMnkvUmtXcnkvUVdFMSt1NkJjcG1Jcy9sT1MycjNZV3lQYjNqdXlnQ0NVbFp1NUd3bm1wQm5OTzdDRzdnaXBxemhYUzFNbzQwU0dJeHY2K3FEKy8ybjZJZVNSUEY3dHluMFBmSStLdUtZZmMrZzhZVlczWG93cDV6eXIvYStENXBvL3d1cUlCOTVsbWY3dlU2K0ZPZ05hN1BOVXJIWXBHdnpXYldsMnFGV0s3SkNMRkhGYzJKeDlHZHNVT1ZjT29GQmVocDlHOFJGNlFaUlRoQ1lnMjFROGszdld4Q3U3VysrSVdNdGJPbXFlZHZ2TnBzdHhmYmt1Z25Ua05xVGhhRXR6NFpUVTlYYmFYaUIxNGtWNHNRU0Z4OEhGNUFsclJsS2ZTK0luTmRYTm15L3VxdDlNcFpWOWk5YVc5V1FXNGozWEs5VjA4dnNoZTgyaEQ5TDBJK0ZlVmV5TUxCbmN6Zzg9IHJvb3RAemZzLXBvZAo"),
+		},
+	}
+
+	err := r.client.Create(ctx, secret)
+	if err != nil {
+		// Handle the error
+		return nil, err
+	}
+
+	return secret, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
