@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: snapshot-migration-config
+data:
+  previous: zfspv-pool/exdataset@snapshot-b769081a-f900-4190-b97e-d1d534e5436d
+  snapshot: zfspv-pool/exdataset@snap2
+  user: worker2
+  remotePool: zfspv-pool
+  remoteDataset: exdataset_recv
+  remoteHost: 10.0.4.80

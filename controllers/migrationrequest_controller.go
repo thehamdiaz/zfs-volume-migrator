@@ -143,7 +143,7 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			return ctrl.Result{}, err
 		}
 
-		// Poll the status of the VolumeSnapshot until it is "ReadyToUse"
+		// Pull the status of the VolumeSnapshot until it is "ReadyToUse"
 		for {
 			var snapshot snapv1.VolumeSnapshot
 			if err := r.Get(ctx, types.NamespacedName{Namespace: vs.Namespace, Name: vs.Name}, &snapshot); err != nil {
