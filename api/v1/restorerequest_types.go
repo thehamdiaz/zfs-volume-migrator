@@ -31,16 +31,25 @@ type RestoreRequestSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Foo is an example field of RestoreRequest. Edit restorerequest_types.go to remove/update
-	Capacity         resource.Quantity                    `json:"capacity"`
-	AccessModes      []corev1.PersistentVolumeAccessMode  `json:"accessModes"`
-	ReclaimPolicy    corev1.PersistentVolumeReclaimPolicy `json:"reclaimPolicy"`
-	StorageClassName string                               `json:"storageClassName"`
-	PVName           string                               `json:"pvName"`
-	PVCName          string                               `json:"pvcName"`
-	PVCResources     corev1.ResourceRequirements          `json:"pvcResources"`
-	ZFSDatasetName   string                               `json:"zfsDatasetName"`
-	ZFSPoolName      string                               `json:"zfsPoolName"`
-	TargetNodeName   string                               `json:"targetNodeName"`
+	Names      Names
+	Parameters Parameters
+}
+
+type Names struct {
+	MigrationRequestName string `json:"migrationRequestName"`
+	StorageClassName     string `json:"storageClassName"`
+	PVName               string `json:"pvName"`
+	PVCName              string `json:"pvcName"`
+	ZFSDatasetName       string `json:"zfsDatasetName"`
+	ZFSPoolName          string `json:"zfsPoolName"`
+	TargetNodeName       string `json:"targetNodeName"`
+}
+
+type Parameters struct {
+	Capacity      resource.Quantity                    `json:"capacity"`
+	AccessModes   []corev1.PersistentVolumeAccessMode  `json:"accessModes"`
+	ReclaimPolicy corev1.PersistentVolumeReclaimPolicy `json:"reclaimPolicy"`
+	PVCResources  corev1.ResourceRequirements          `json:"pvcResources"`
 }
 
 // RestoreRequestStatus defines the observed state of RestoreRequest

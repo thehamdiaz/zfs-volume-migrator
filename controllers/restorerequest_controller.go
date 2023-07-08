@@ -124,28 +124,28 @@ func (r *RestoreRequestReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func CreatePV(ctx context.Context, k8sClient client.Client, restoreReq *v1.RestoreRequest) error {
 	pv := &corev1.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: restoreReq.Spec.PVName,
+			Name: restoreReq.Spec.Names.PVName,
 		},
 		Spec: corev1.PersistentVolumeSpec{
-			StorageClassName: restoreReq.Spec.StorageClassName,
+			StorageClassName: restoreReq.Spec.Names.StorageClassName,
 			Capacity: corev1.ResourceList{
-				corev1.ResourceStorage: restoreReq.Spec.Capacity,
+				corev1.ResourceStorage: restoreReq.Spec.Parameters.Capacity,
 			},
-			AccessModes:                   make([]corev1.PersistentVolumeAccessMode, len(restoreReq.Spec.AccessModes)),
-			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimPolicy(restoreReq.Spec.ReclaimPolicy),
+			AccessModes:                   make([]corev1.PersistentVolumeAccessMode, len(restoreReq.Spec.Parameters.AccessModes)),
+			PersistentVolumeReclaimPolicy: corev1.PersistentVolumeReclaimPolicy(restoreReq.Spec.Parameters.ReclaimPolicy),
 			ClaimRef: &corev1.ObjectReference{
 				APIVersion: "v1",
 				Kind:       "PersistentVolumeClaim",
-				Name:       restoreReq.Spec.PVCName, // Set the name of the PVC
-				Namespace:  "default",               // Set the namespace of the PVC
+				Name:       restoreReq.Spec.Names.PVCName, // Set the name of the PVC
+				Namespace:  "default",                     // Set the namespace of the PVC
 			},
 			PersistentVolumeSource: corev1.PersistentVolumeSource{
 				CSI: &corev1.CSIPersistentVolumeSource{
 					FSType:       "zfs",
 					Driver:       "zfs.csi.openebs.io",
-					VolumeHandle: restoreReq.Spec.ZFSDatasetName,
+					VolumeHandle: restoreReq.Spec.Names.ZFSDatasetName,
 					VolumeAttributes: map[string]string{
-						"openebs.io/poolname": restoreReq.Spec.ZFSPoolName,
+						"openebs.io/poolname": restoreReq.Spec.Names.ZFSPoolName,
 					},
 				},
 			},
@@ -158,7 +158,7 @@ func CreatePV(ctx context.Context, k8sClient client.Client, restoreReq *v1.Resto
 									Key:      "kubernetes.io/hostname",
 									Operator: corev1.NodeSelectorOpIn,
 									Values: []string{
-										restoreReq.Spec.TargetNodeName,
+										restoreReq.Spec.Names.TargetNodeName,
 									},
 								},
 							},
@@ -170,7 +170,7 @@ func CreatePV(ctx context.Context, k8sClient client.Client, restoreReq *v1.Resto
 	}
 
 	// Populate the AccessModes field
-	for i, mode := range restoreReq.Spec.AccessModes {
+	for i, mode := range restoreReq.Spec.Parameters.AccessModes {
 		pv.Spec.AccessModes[i] = mode
 	}
 
@@ -185,22 +185,22 @@ func CreatePV(ctx context.Context, k8sClient client.Client, restoreReq *v1.Resto
 func CreatePVC(ctx context.Context, k8sClient client.Client, restoreReq *apiv1.RestoreRequest) error {
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      restoreReq.Spec.PVCName,
+			Name:      restoreReq.Spec.Names.PVCName,
 			Namespace: "default",
 		},
 		Spec: corev1.PersistentVolumeClaimSpec{
-			StorageClassName: &restoreReq.Spec.StorageClassName,
-			AccessModes:      make([]corev1.PersistentVolumeAccessMode, len(restoreReq.Spec.AccessModes)),
+			StorageClassName: &restoreReq.Spec.Names.StorageClassName,
+			AccessModes:      make([]corev1.PersistentVolumeAccessMode, len(restoreReq.Spec.Parameters.AccessModes)),
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceStorage: restoreReq.Spec.Capacity,
+					corev1.ResourceStorage: restoreReq.Spec.Parameters.Capacity,
 				},
 			},
 		},
 	}
 
 	// Populate the AccessModes field
-	for i, mode := range restoreReq.Spec.AccessModes {
+	for i, mode := range restoreReq.Spec.Parameters.AccessModes {
 		pvc.Spec.AccessModes[i] = mode
 	}
 
@@ -214,12 +214,12 @@ func CreatePVC(ctx context.Context, k8sClient client.Client, restoreReq *apiv1.R
 
 func CreateZFSVolume(ctx context.Context, k8sClient client.Client, restoreReq *apiv1.RestoreRequest) error {
 	// Convert the capacity from GB to bytes
-	capacityInBytesString := fmt.Sprintf("%d", restoreReq.Spec.Capacity.Value())
+	capacityInBytesString := fmt.Sprintf("%d", restoreReq.Spec.Parameters.Capacity.Value())
 	fmt.Printf("Capacity is %s\n", capacityInBytesString)
 	// Create the ZFSVolume object
 	zfsVolume := &openebszfsv1.ZFSVolume{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       restoreReq.Spec.ZFSDatasetName,
+			Name:       restoreReq.Spec.Names.ZFSDatasetName,
 			Namespace:  "openebs",
 			Finalizers: []string{"zfs.openebs.io/finalizer"},
 		},
@@ -228,8 +228,8 @@ func CreateZFSVolume(ctx context.Context, k8sClient client.Client, restoreReq *a
 			Compression: "off",
 			Dedup:       "off",
 			FsType:      "zfs",
-			OwnerNodeID: restoreReq.Spec.TargetNodeName,
-			PoolName:    restoreReq.Spec.ZFSPoolName,
+			OwnerNodeID: restoreReq.Spec.Names.TargetNodeName,
+			PoolName:    restoreReq.Spec.Names.ZFSPoolName,
 			VolumeType:  "DATASET",
 		},
 		Status: openebszfsv1.VolStatus{

@@ -236,16 +236,21 @@ func (r *MigrationRequestReconciler) createRestoreRequest(ctx context.Context, m
 			Namespace:    "default",
 		},
 		Spec: apiv1.RestoreRequestSpec{
-			Capacity:         quantity,
-			AccessModes:      r.CachedData[migrationRequest.Name].PersistentVolume.Spec.AccessModes,
-			ReclaimPolicy:    r.CachedData[migrationRequest.Name].PersistentVolume.Spec.PersistentVolumeReclaimPolicy,
-			StorageClassName: r.CachedData[migrationRequest.Name].PersistentVolume.Spec.StorageClassName,
-			PVName:           "restored-" + r.CachedData[migrationRequest.Name].PersistentVolume.Name,
-			PVCName:          "restored-" + r.CachedData[migrationRequest.Name].PersistentVolumeClaim.Name,
-			PVCResources:     r.CachedData[migrationRequest.Name].PersistentVolumeClaim.Spec.Resources,
-			ZFSDatasetName:   r.CachedData[migrationRequest.Name].ConfigMap.Data["remoteDataset"],
-			ZFSPoolName:      r.CachedData[migrationRequest.Name].ConfigMap.Data["remotePool"],
-			TargetNodeName:   r.CachedData[migrationRequest.Name].ConfigMap.Data["remoteHost"],
+			Names: apiv1.Names{
+				MigrationRequestName: migrationRequest.Name,
+				StorageClassName:     r.CachedData[migrationRequest.Name].PersistentVolume.Spec.StorageClassName,
+				PVName:               "restored-" + r.CachedData[migrationRequest.Name].PersistentVolume.Name,
+				PVCName:              "restored-" + r.CachedData[migrationRequest.Name].PersistentVolumeClaim.Name,
+				ZFSDatasetName:       r.CachedData[migrationRequest.Name].ConfigMap.Data["remoteDataset"],
+				ZFSPoolName:          r.CachedData[migrationRequest.Name].ConfigMap.Data["remotePool"],
+				TargetNodeName:       r.CachedData[migrationRequest.Name].ConfigMap.Data["remoteHost"],
+			},
+			Parameters: apiv1.Parameters{
+				Capacity:      quantity,
+				AccessModes:   r.CachedData[migrationRequest.Name].PersistentVolume.Spec.AccessModes,
+				ReclaimPolicy: r.CachedData[migrationRequest.Name].PersistentVolume.Spec.PersistentVolumeReclaimPolicy,
+				PVCResources:  r.CachedData[migrationRequest.Name].PersistentVolumeClaim.Spec.Resources,
+			},
 		},
 	}
 
