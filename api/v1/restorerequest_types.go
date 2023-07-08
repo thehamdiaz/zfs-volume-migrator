@@ -31,8 +31,8 @@ type RestoreRequestSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Foo is an example field of RestoreRequest. Edit restorerequest_types.go to remove/update
-	Names      Names
-	Parameters Parameters
+	Names      Names      `json:"names"`
+	Parameters Parameters `json:"parameters"`
 }
 
 type Names struct {

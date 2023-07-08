@@ -30,11 +30,11 @@ type MigrationRequestSpec struct {
 
 	// Foo is an example field of MigrationRequest. Edit migrationrequest_types.go to remove/update
 
-	PodName                 string `json:"podName,omitempty"`
-	DesiredSnapshotCount    int    `json:"desiredSnapshotCount,omitempty"`
-	SnapInterval            int    `json:"snapInterval,omitempty"`
-	Destination             DestinationDef
-	VolumeSnapshotClassName string `json:"VolumeSnapshotClassName,omitempty"`
+	PodName                 string         `json:"podName,omitempty"`
+	DesiredSnapshotCount    int            `json:"desiredSnapshotCount,omitempty"`
+	SnapInterval            int            `json:"snapInterval,omitempty"`
+	Destination             DestinationDef `json:"destinationDef,omitempty"`
+	VolumeSnapshotClassName string         `json:"VolumeSnapshotClassName,omitempty"`
 }
 
 type DestinationDef struct {

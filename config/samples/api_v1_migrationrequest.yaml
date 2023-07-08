@@ -11,10 +11,10 @@ metadata:
 spec:
   # TODO(user): Add fields here
   podName: fio
-	DesiredSnapshotCount: 3
-	SnapInterval: 3
-	Destination:
-    User: worker2
-    RemotePool: zfs-pool
-    RemoteDataset: migratedVolume
-	VolumeSnapshotClassName: migration-vsc
+  desiredSnapshotCount: 3
+  snapInterval: 3
+  destination:
+    user: worker2
+    remotePool: zfs-pool
+    remoteDataset: migratedVolume
+  volumeSnapshotClassName: migration-vsc
