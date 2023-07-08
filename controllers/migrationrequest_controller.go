@@ -84,12 +84,12 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	// Check if the RestoreRequest is already completed (This field is set by the restore Controller)
-	if migrationRequest.Status.MigrationComplete == "True" {
+	if migrationRequest.Status.MigrationCompleted == "True" {
 		l.Info("MigrationRequest is already completed")
 		return ctrl.Result{}, nil
 	}
 	// Check if all the snapshots have been sent (sending completed)
-	if migrationRequest.Status.AllSnapshotsCreated == "True" {
+	if migrationRequest.Status.AllSnapshotsSent == "True" {
 		l.Info("All the snapshots have been sent")
 		return ctrl.Result{}, nil
 	}
@@ -177,7 +177,7 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			l.Error(err, "failed to create restoreRequest")
 			return ctrl.Result{}, err
 		}
-		migrationRequest.Status.MigrationComplete = "True"
+		migrationRequest.Status.AllSnapshotsSent = "True"
 	}
 	/*
 		// Update the status of the MigrationRequest object

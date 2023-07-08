@@ -48,9 +48,9 @@ type DestinationDef struct {
 type MigrationRequestStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	SnapshotCount       int    `json:"snapshotCreated,omitempty"`
-	AllSnapshotsCreated string `json:"allSnapshotCreated,omitempty"`
-	MigrationComplete   string `json:"migrationComplete,omitempty"`
+	SnapshotCount      int    `json:"snapshotCreated,omitempty"`
+	AllSnapshotsSent   string `json:"allSnapshotSent,omitempty"`
+	MigrationCompleted string `json:"migrationComplete,omitempty"`
 }
 
 //+kubebuilder:object:root=true
