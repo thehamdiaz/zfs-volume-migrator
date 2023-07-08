@@ -30,8 +30,11 @@ type MigrationRequestSpec struct {
 
 	// Foo is an example field of MigrationRequest. Edit migrationrequest_types.go to remove/update
 
-	PodName     string `json:"podName,omitempty"`
-	Destination DestinationDef
+	PodName                 string `json:"podName,omitempty"`
+	DesiredSnapshotCount    int    `json:"desiredSnapshotCount,omitempty"`
+	SnapInterval            int    `json:"snapInterval,omitempty"`
+	Destination             DestinationDef
+	VolumeSnapshotClassName string `json:"VolumeSnapshotClassName,omitempty"`
 }
 
 type DestinationDef struct {
@@ -45,7 +48,7 @@ type DestinationDef struct {
 type MigrationRequestStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	SnapshotCount       string `json:"snapshotCreated,omitempty"`
+	SnapshotCount       int    `json:"snapshotCreated,omitempty"`
 	AllSnapshotsCreated string `json:"allSnapshotCreated,omitempty"`
 	MigrationComplete   string `json:"migrationComplete,omitempty"`
 }

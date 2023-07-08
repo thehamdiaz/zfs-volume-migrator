@@ -18,18 +18,20 @@ package controllers
 
 import (
 	"context"
-	//"time"
+	"fmt"
+	"time"
 
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
 	apiv1 "github.com/thehamdiaz/first-controller.git/api/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 
-	//"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	//"k8s.io/apimachinery/pkg/types"
 
@@ -81,7 +83,7 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	// Check if the RestoreRequest is already completed
+	// Check if the RestoreRequest is already completed (This field is set by the restore Controller)
 	if migrationRequest.Status.MigrationComplete == "True" {
 		l.Info("MigrationRequest is already completed")
 		return ctrl.Result{}, nil
@@ -93,82 +95,91 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	// Retrieve or use the cached data
-	cachedData, exists := r.CachedData[req.Name]
+	cachedData, exists := r.CachedData[migrationRequest.Name]
 	if !exists {
 		// Cached data doesn't exist, fetch or create it
 		// Fetch the Pod
-		var pod corev1.Pod
-		if err := r.Get(ctx, types.NamespacedName{Namespace: migrationRequest.Namespace, Name: migrationRequest.Spec.PodName}, &pod); err != nil {
+		if err := r.Get(ctx, types.NamespacedName{Namespace: migrationRequest.Namespace, Name: migrationRequest.Spec.PodName}, cachedData.Pod); err != nil {
 			l.Error(err, "unable to fetch Pod")
 			return ctrl.Result{}, err
 		}
 		// Fetch the PersistentVolumeClaim
-		var pvc corev1.PersistentVolumeClaim
-		if err := r.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pod.Spec.Volumes[0].PersistentVolumeClaim.ClaimName}, &pvc); err != nil {
+		if err := r.Get(ctx, types.NamespacedName{Namespace: cachedData.Pod.Namespace, Name: cachedData.Pod.Spec.Volumes[0].PersistentVolumeClaim.ClaimName}, cachedData.PersistentVolumeClaim); err != nil {
 			l.Error(err, "unable to fetch PVC")
 			return ctrl.Result{}, err
 		}
 		// Fetch the PersistentVolume
-		var pv corev1.PersistentVolume
-		if err := r.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pvc.Spec.VolumeName}, &pv); err != nil {
+		if err := r.Get(ctx, types.NamespacedName{Namespace: cachedData.Pod.Namespace, Name: cachedData.PersistentVolumeClaim.Spec.VolumeName}, cachedData.PersistentVolume); err != nil {
 			l.Error(err, "unable to fetch PV")
 			return ctrl.Result{}, err
 		}
 		// Create the VolumeSnapshotClass
-		vsc, err := r.ensureVolumeSnapshotClass(ctx, migrationRequest)
+		var err error
+		cachedData.VolumeSnapshotClass, err = r.ensureVolumeSnapshotClass(ctx, migrationRequest)
 		if err != nil {
 			l.Error(err, "unable to create VolumeSnapshotClass")
 			return ctrl.Result{}, err
 		}
 		// Create the ConfigMap
-		configMap, err := r.createConfigMapObject(ctx, migrationRequest)
+		cachedData.ConfigMap, err = r.createConfigMapObject(ctx, migrationRequest)
 		if err != nil {
 			l.Error(err, "unable to create the ConfigMap")
 			return ctrl.Result{}, err
 		}
 
-		secret, err := r.createSecretObject(ctx, migrationRequest)
+		cachedData.Secret, err = r.createSecretObject(ctx, migrationRequest)
 		if err != nil {
-			l.Error(err, "unable to create the secret")
+			l.Error(err, "unable to create the Secret")
 			return ctrl.Result{}, err
 		}
+
+	}
+	// stop condition (can and will be modified)
+	if migrationRequest.Spec.DesiredSnapshotCount != migrationRequest.Status.SnapshotCount {
+		snapshot, err := r.createAndEnsureVolumeSnapshotReadiness(ctx, migrationRequest)
+		if err != nil {
+			l.Error(err, "unable to create the Volumesnapshot")
+			return ctrl.Result{}, err
+		}
+		err = r.sendSnapshot(ctx, migrationRequest, snapshot)
+		if err != nil {
+			l.Error(err, "failed to send snapshot")
+			return ctrl.Result{}, err
+		}
+
+		// incriment the number of snapshots
+		migrationRequest.Status.SnapshotCount++
+
+		// Wait for the specified interval
+		time.Sleep(time.Duration(migrationRequest.Spec.SnapInterval))
+
+		// Enqueue the resource for the next reconciliation
+		return ctrl.Result{Requeue: true}, nil
+	} else {
+		err := r.stopPod(ctx, migrationRequest)
+		if err != nil {
+			l.Error(err, "failed to stop the pod")
+			return ctrl.Result{}, err
+		}
+		snapshot, err := r.createAndEnsureVolumeSnapshotReadiness(ctx, migrationRequest)
+		if err != nil {
+			l.Error(err, "unable to create the Volumesnapshot")
+			return ctrl.Result{}, err
+		}
+		err = r.sendSnapshot(ctx, migrationRequest, snapshot)
+		if err != nil {
+			l.Error(err, "failed to send snapshot")
+			return ctrl.Result{}, err
+		}
+		// this will be created in the remote node trigerring the restoring controller
+		_, err = r.createRestoreRequest(ctx, migrationRequest)
+		if err != nil {
+			l.Error(err, "failed to create restoreRequest")
+			return ctrl.Result{}, err
+		}
+		migrationRequest.Status.MigrationComplete = "True"
 	}
 	/*
-		// Create the VolumeSnapshot
-		vs := &snapv1.VolumeSnapshot{
-			ObjectMeta: metav1.ObjectMeta{
-				GenerateName: "migration-snapshot-",
-				Namespace:    migrationRequest.Namespace,
-			},
-			Spec: snapv1.VolumeSnapshotSpec{
-				Source: snapv1.VolumeSnapshotSource{
-					PersistentVolumeClaimName: &pvc.Name,
-				},
-				VolumeSnapshotClassName: &vscName,
-			},
-			//Status: &snapv1.VolumeSnapshotStatus{},
-		}
-
-		if err := r.Create(ctx, vs); err != nil {
-			l.Error(err, "unable to create VolumeSnapshot")
-			return ctrl.Result{}, err
-		}
-
-		// Pull the status of the VolumeSnapshot until it is "ReadyToUse"
-		for {
-			var snapshot snapv1.VolumeSnapshot
-			if err := r.Get(ctx, types.NamespacedName{Namespace: vs.Namespace, Name: vs.Name}, &snapshot); err != nil {
-				l.Error(err, "unable to fetch VolumeSnapshot")
-				return ctrl.Result{}, err
-			}
-
-			if snapshot.Status != nil && snapshot.Status.ReadyToUse != nil && *snapshot.Status.ReadyToUse == true {
-				break
-			}
-
-			time.Sleep(2 * time.Second)
-		}
-
 		// Update the status of the MigrationRequest object
 		migrationRequest.Status.SnapshotCreated = "True"
 		if err := r.Status().Update(ctx, migrationRequest); err != nil {
@@ -183,7 +194,7 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}*/
 
-	//get the capacity
+	/*//get the capacity
 	quantity, _ := resource.ParseQuantity(pv.Spec.Capacity.Storage().String())
 	// Create a new RestoreRequest object and set its fields
 	restoreReqRef := &apiv1.RestoreRequest{
@@ -210,41 +221,43 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		l.Error(err, "unable to create the RestoreRequest object")
 		return ctrl.Result{}, err
 	}
-
+	*/
 	return ctrl.Result{}, nil
 }
 
-func createRestoreRequestObject(pv *corev1.PersistentVolume, pvc *corev1.PersistentVolumeClaim, pvName string, pvcName string, targetNodeName string) (*apiv1.RestoreRequest, error) {
-
-	//get the capacity
-	quantity, _ := resource.ParseQuantity(pv.Spec.Capacity.Storage().String())
+func (r *MigrationRequestReconciler) createRestoreRequest(ctx context.Context, migrationRequest *apiv1.MigrationRequest) (*apiv1.RestoreRequest, error) {
+	// Get the capacity
+	quantity, _ := resource.ParseQuantity(r.CachedData[migrationRequest.Name].PersistentVolume.Spec.Capacity.Storage().String())
 
 	// Create a new RestoreRequest object and set its fields
-	restoreReqRef := &apiv1.RestoreRequest{
+	restoreReq := &apiv1.RestoreRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "restore-", // Provide a unique name for the object
+			Namespace:    "default",
 		},
-
 		Spec: apiv1.RestoreRequestSpec{
 			Capacity:         quantity,
-			AccessModes:      pv.Spec.AccessModes,
-			ReclaimPolicy:    pv.Spec.PersistentVolumeReclaimPolicy,
-			StorageClassName: pv.Spec.StorageClassName,
-			PVName:           pvName,
-			PVCName:          pvcName,
-			PVCResources:     pvc.Spec.Resources,
-			ZFSDatasetName:   "dataset1",
-			ZFSPoolName:      "zfspv-pool",
-			TargetNodeName:   targetNodeName,
+			AccessModes:      r.CachedData[migrationRequest.Name].PersistentVolume.Spec.AccessModes,
+			ReclaimPolicy:    r.CachedData[migrationRequest.Name].PersistentVolume.Spec.PersistentVolumeReclaimPolicy,
+			StorageClassName: r.CachedData[migrationRequest.Name].PersistentVolume.Spec.StorageClassName,
+			PVName:           "restored-" + r.CachedData[migrationRequest.Name].PersistentVolume.Name,
+			PVCName:          "restored-" + r.CachedData[migrationRequest.Name].PersistentVolumeClaim.Name,
+			PVCResources:     r.CachedData[migrationRequest.Name].PersistentVolumeClaim.Spec.Resources,
+			ZFSDatasetName:   r.CachedData[migrationRequest.Name].ConfigMap.Data["remoteDataset"],
+			ZFSPoolName:      r.CachedData[migrationRequest.Name].ConfigMap.Data["remotePool"],
+			TargetNodeName:   r.CachedData[migrationRequest.Name].ConfigMap.Data["remoteHost"],
 		},
-		Status: apiv1.RestoreRequestStatus{},
 	}
 
-	return restoreReqRef, nil
+	if err := r.Create(ctx, restoreReq); err != nil {
+		return nil, err
+	}
+
+	return restoreReq, nil
 }
 
 func (r *MigrationRequestReconciler) ensureVolumeSnapshotClass(ctx context.Context, migrationRequest *apiv1.MigrationRequest) (*snapv1.VolumeSnapshotClass, error) {
-	vscName := "migration-vsc"
+	vscName := migrationRequest.Spec.VolumeSnapshotClassName //"migration-vsc"
 	vscNamespace := migrationRequest.Namespace
 	existingVSC := &snapv1.VolumeSnapshotClass{}
 	err := r.Get(ctx, types.NamespacedName{Name: vscName, Namespace: vscNamespace}, existingVSC)
@@ -283,12 +296,12 @@ func (r *MigrationRequestReconciler) createConfigMapObject(ctx context.Context, 
 			GenerateName: "snapshot-migration-config-",
 		},
 		Data: map[string]string{
-			"previous":      "None",
-			"snapshot":      "None",
-			"user":          migrationRequest.Spec.Destination.User,
-			"remotePool":    migrationRequest.Spec.Destination.RemotePool,
-			"remoteDataset": migrationRequest.Spec.Destination.RemoteDataset,
-			"remoteHost":    migrationRequest.Spec.Destination.RemoteHost,
+			"PREVIOUS":      "None",
+			"SNAPSHOT":      "None",
+			"USER":          migrationRequest.Spec.Destination.User,
+			"REMOTEPOOL":    migrationRequest.Spec.Destination.RemotePool,
+			"REMOTEDATASET": migrationRequest.Spec.Destination.RemoteDataset,
+			"REMOTEHOST":    migrationRequest.Spec.Destination.RemoteHost,
 		},
 	}
 
@@ -317,13 +330,187 @@ func (r *MigrationRequestReconciler) createSecretObject(ctx context.Context, mig
 		},
 	}
 
-	err := r.client.Create(ctx, secret)
+	err := r.Create(ctx, secret)
 	if err != nil {
-		// Handle the error
 		return nil, err
 	}
 
 	return secret, nil
+}
+
+func (r *MigrationRequestReconciler) createAndEnsureVolumeSnapshotReadiness(ctx context.Context, migrationRequest *apiv1.MigrationRequest) (*snapv1.VolumeSnapshot, error) {
+	vs := &snapv1.VolumeSnapshot{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "migration-snapshot-",
+			Namespace:    migrationRequest.Namespace,
+		},
+		Spec: snapv1.VolumeSnapshotSpec{
+			Source: snapv1.VolumeSnapshotSource{
+				PersistentVolumeClaimName: &r.CachedData[migrationRequest.Name].PersistentVolumeClaim.Name,
+			},
+			VolumeSnapshotClassName: &r.CachedData[migrationRequest.Name].VolumeSnapshotClass.Name,
+		},
+	}
+
+	if err := r.Create(ctx, vs); err != nil {
+		return nil, err
+	}
+
+	for {
+		var snapshot snapv1.VolumeSnapshot
+		if err := r.Get(ctx, types.NamespacedName{Namespace: vs.Namespace, Name: vs.Name}, &snapshot); err != nil {
+			return nil, err
+		}
+
+		if snapshot.Status != nil && snapshot.Status.ReadyToUse != nil && *snapshot.Status.ReadyToUse {
+			return &snapshot, nil
+		}
+
+		time.Sleep(time.Second)
+	}
+}
+
+func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migrationRequest *apiv1.MigrationRequest, vs *snapv1.VolumeSnapshot) error {
+	// Fetch the VolumeSnapshotContent
+	var vsContent snapv1.VolumeSnapshotContent
+	err := r.Get(ctx, types.NamespacedName{Name: *vs.Status.BoundVolumeSnapshotContentName}, &vsContent)
+	if err != nil {
+		return err
+	}
+
+	// Modify the ConfigMap
+	r.CachedData[migrationRequest.Name].ConfigMap.Data["PREVIOUS"] = r.CachedData[migrationRequest.Name].ConfigMap.Data["SNAPSHOT"]
+	r.CachedData[migrationRequest.Name].ConfigMap.Data["SNAPSHOT"] = *vsContent.Status.SnapshotHandle
+
+	// Apply the updated ConfigMap
+	err = r.Update(ctx, r.CachedData[migrationRequest.Name].ConfigMap)
+	if err != nil {
+		return err
+	}
+
+	// Create the Job
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "snapshot-migration-sender-append-" + r.CachedData[migrationRequest.Name].PersistentVolume.Name,
+		},
+		Spec: batchv1.JobSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "zfs-container",
+							Image: "thehamdiaz/zfs-ubuntu:v10.0",
+							SecurityContext: &corev1.SecurityContext{
+								Privileged: func() *bool { b := true; return &b }(),
+							},
+							EnvFrom: []corev1.EnvFromSource{
+								{
+									ConfigMapRef: &corev1.ConfigMapEnvSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: r.CachedData[migrationRequest.Name].ConfigMap.Name,
+										},
+									},
+								},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "ssh-keys",
+									MountPath: "/etc/ssh-key",
+									ReadOnly:  true,
+								},
+							},
+						},
+					},
+					RestartPolicy: "Never",
+					NodeSelector: map[string]string{
+						"kubernetes.io/hostname": r.CachedData[migrationRequest.Name].Pod.Spec.NodeName,
+					},
+					Affinity: &corev1.Affinity{
+						NodeAffinity: &corev1.NodeAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+								NodeSelectorTerms: []corev1.NodeSelectorTerm{
+									{
+										MatchExpressions: []corev1.NodeSelectorRequirement{
+											{
+												Key:      "kubernetes.io/hostname",
+												Operator: corev1.NodeSelectorOpIn,
+												Values:   []string{r.CachedData[migrationRequest.Name].Pod.Spec.NodeName},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "ssh-keys",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName: r.CachedData[migrationRequest.Name].Secret.Name,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	// Create the Job
+	err = r.Create(ctx, job)
+	if err != nil {
+		return err
+	}
+
+	// Wait for the Job to finish
+	jobKey := types.NamespacedName{Name: job.Name, Namespace: job.Namespace}
+	err = wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
+		if err := r.Get(ctx, jobKey, job); err != nil {
+			return false, err
+		}
+
+		if job.Status.CompletionTime != nil {
+			if job.Status.Succeeded > 0 {
+				return true, nil
+			}
+			return false, fmt.Errorf("job failed: %s", job.Status.String())
+		}
+
+		return false, nil
+	})
+
+	return err
+}
+
+func (r *MigrationRequestReconciler) stopPod(ctx context.Context, migrationRequest *apiv1.MigrationRequest) error {
+	pod := r.CachedData[migrationRequest.Name].Pod
+
+	// Set the pod's deletion timestamp to stop it
+	gracePeriodSeconds := int64(0)
+	deleteOptions := client.DeleteOptions{
+		GracePeriodSeconds: &gracePeriodSeconds,
+	}
+	err := r.Delete(ctx, pod, &deleteOptions)
+	if err != nil {
+		return err
+	}
+
+	// Wait until the pod is deleted
+	for {
+		err = r.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, pod)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				// Pod is deleted
+				break
+			}
+			return err
+		}
+
+		time.Sleep(time.Second)
+	}
+
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
