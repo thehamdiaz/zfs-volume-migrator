@@ -33,8 +33,8 @@ type MigrationRequestSpec struct {
 	PodName                 string         `json:"podName,omitempty"`
 	DesiredSnapshotCount    int            `json:"desiredSnapshotCount,omitempty"`
 	SnapInterval            int            `json:"snapInterval,omitempty"`
-	Destination             DestinationDef `json:"destinationDef,omitempty"`
-	VolumeSnapshotClassName string         `json:"VolumeSnapshotClassName,omitempty"`
+	Destination             DestinationDef `json:"destination,omitempty"`
+	VolumeSnapshotClassName string         `json:"volumeSnapshotClassName,omitempty"`
 }
 
 type DestinationDef struct {

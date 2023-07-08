@@ -35,11 +35,9 @@ spec:
           spec:
             description: MigrationRequestSpec defines the desired state of MigrationRequest
             properties:
-              VolumeSnapshotClassName:
-                type: string
               desiredSnapshotCount:
                 type: integer
-              destinationDef:
+              destination:
                 properties:
                   remoteDataset:
                     type: string
@@ -54,6 +52,8 @@ spec:
                 type: string
               snapInterval:
                 type: integer
+              volumeSnapshotClassName:
+                type: string
             type: object
           status:
             description: MigrationRequestStatus defines the observed state of MigrationRequest
