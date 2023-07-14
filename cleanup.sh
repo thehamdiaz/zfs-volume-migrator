@@ -18,6 +18,11 @@ kubectl get job --no-headers -o custom-columns=":metadata.name" |
   awk '/^s/{print $1}' |
   xargs -I {} kubectl delete job {}
 
+# Delete all jobss that start with "legacy"
+kubectl get job --no-headers -o custom-columns=":metadata.name" |
+  awk '/^legacy-/{print $1}' |
+  xargs -I {} kubectl delete job {}
+
 # Delete all migrationrequests.api.k8s.zfs-volume-migrator.io objects
 kubectl delete migrationrequest.api.k8s.zfs-volume-migrator.io --all
 
@@ -29,11 +34,7 @@ kubectl get pvc --no-headers -o custom-columns=":metadata.name" |
   awk '/^restored-/{print $1}' |
   xargs -I {} kubectl delete pvc {}
 
-# Delete all PVs that start with "restore"
-kubectl get pv --no-headers -o custom-columns=":metadata.name" |
-  awk '/^restored-/{print $1}' |
-  xargs -I {} kubectl delete pv {}
-
+#apply the diffrent test objects
 kubectl apply -f config/samples/api_v1_migrationrequest.yaml 
 kubectl apply -f test-manifests/test-openebszfs/
-
+kubectl apply -f test-manifests/random/my-fio.yaml

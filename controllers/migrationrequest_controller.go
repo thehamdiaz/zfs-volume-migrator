@@ -159,6 +159,7 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			l.Error(err, "failed to update migrationRequest status")
 			return ctrl.Result{}, err
 		}
+
 		err = r.sendSnapshot(ctx, migrationRequest, snapshot)
 		if err != nil {
 			l.Error(err, "failed to send snapshot")
@@ -173,7 +174,7 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 
 		// Wait for the specified interval
-		time.Sleep(time.Duration(migrationRequest.Spec.SnapInterval))
+		time.Sleep(time.Second * time.Duration(migrationRequest.Spec.SnapInterval))
 
 		// Enqueue the resource for the next reconciliation
 		return ctrl.Result{Requeue: true}, nil
@@ -214,49 +215,7 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			}
 		*/
 	}
-	/*
-		// Update the status of the MigrationRequest object
-		migrationRequest.Status.SnapshotCreated = "True"
-		if err := r.Status().Update(ctx, migrationRequest); err != nil {
-			l.Error(err, "unable to update MigrationRequest status")
-			return ctrl.Result{}, err
-		}*/
 
-	// Create RestoreRequest object for testing
-	/*restoreReqRef, _ := createRestoreRequestObject(&pv, &pvc, "restoredPv", "restoredPvc", "worker1")
-	if err := r.Create(ctx, restoreReqRef); err != nil {
-		l.Error(err, "unable to create the RestoreRequest object")
-		return ctrl.Result{}, err
-	}*/
-
-	/*//get the capacity
-	quantity, _ := resource.ParseQuantity(pv.Spec.Capacity.Storage().String())
-	// Create a new RestoreRequest object and set its fields
-	restoreReqRef := &apiv1.RestoreRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "restore-", // Provide a unique name for the object
-			Namespace:    "default",
-		},
-
-		Spec: apiv1.RestoreRequestSpec{
-			Capacity:         quantity,
-			AccessModes:      pv.Spec.AccessModes,
-			ReclaimPolicy:    pv.Spec.PersistentVolumeReclaimPolicy,
-			StorageClassName: pv.Spec.StorageClassName,
-			PVName:           "restored-pv",
-			PVCName:          "restored-pvc",
-			PVCResources:     pvc.Spec.Resources,
-			ZFSDatasetName:   "exdataset",
-			ZFSPoolName:      "zfspv-pool",
-			TargetNodeName:   "worker1",
-		},
-	}
-
-	if err := r.Create(ctx, restoreReqRef); err != nil {
-		l.Error(err, "unable to create the RestoreRequest object")
-		return ctrl.Result{}, err
-	}
-	*/
 	return ctrl.Result{}, nil
 }
 
