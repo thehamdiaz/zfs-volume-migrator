@@ -34,6 +34,10 @@ kubectl get pvc --no-headers -o custom-columns=":metadata.name" |
   awk '/^restored-/{print $1}' |
   xargs -I {} kubectl delete pvc {}
 
+# Delete the zfsvolume
+ kubectl delete zfsvolumes.zfs.openebs.io -n openebs migrated-volume
+
+ 
 #apply the diffrent test objects
 kubectl apply -f config/samples/api_v1_migrationrequest.yaml 
 kubectl apply -f test-manifests/test-openebszfs/

@@ -56,6 +56,7 @@ type CachedResources struct {
 	VolumeSnapshotClass   *snapv1.VolumeSnapshotClass
 	ConfigMap             *corev1.ConfigMap
 	Secret                *corev1.Secret
+	PreviousSnapshot      *snapv1.VolumeSnapshot
 }
 
 //+kubebuilder:rbac:groups=api.k8s.zfs-volume-migrator.io,resources=migrationrequests,verbs=get;list;watch;create;update;patch;delete
@@ -142,31 +143,39 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 		r.CachedData[migrationRequest.Name] = cachedResources
 	}
-	if migrationRequest.Status.ConfirmedSnapshotCount != migrationRequest.Status.SnapshotCount {
-		//Previous snapshot wasn't sent
-		return ctrl.Result{Requeue: true}, nil
-	}
+
 	// stop condition (can and will be modified)
-	if migrationRequest.Spec.DesiredSnapshotCount != migrationRequest.Status.SnapshotCount {
-		snapshot, err := r.createAndEnsureVolumeSnapshotReadiness(ctx, migrationRequest)
-		if err != nil {
-			l.Error(err, "unable to create the Volumesnapshot")
-			return ctrl.Result{}, err
-		}
-		// incriment the number of snapshots
-		migrationRequest.Status.SnapshotCount++
-		if err := r.Status().Update(ctx, migrationRequest); err != nil {
-			l.Error(err, "failed to update migrationRequest status")
-			return ctrl.Result{}, err
+	if migrationRequest.Status.ConfirmedSnapshotCount < migrationRequest.Spec.DesiredSnapshotCount-1 {
+		snapshot := &snapv1.VolumeSnapshot{}
+		var err error
+		//Previous snapshot wasn't sent
+		if migrationRequest.Status.ConfirmedSnapshotCount < migrationRequest.Status.SnapshotCount {
+			snapshot = r.CachedData[migrationRequest.Name].PreviousSnapshot
+		} else if migrationRequest.Status.ConfirmedSnapshotCount == migrationRequest.Status.SnapshotCount {
+			snapshot, err = r.createAndEnsureVolumeSnapshotReadiness(ctx, migrationRequest)
+			if err != nil {
+				l.Error(err, "unable to create the Volumesnapshot")
+				return ctrl.Result{}, err
+			}
+			// incriment the number of created snapshots
+			migrationRequest.Status.SnapshotCount++
+			if err = r.Status().Update(ctx, migrationRequest); err != nil {
+				l.Error(err, "failed to update migrationRequest status")
+				return ctrl.Result{}, err
+			}
 		}
 
 		err = r.sendSnapshot(ctx, migrationRequest, snapshot)
 		if err != nil {
 			l.Error(err, "failed to send snapshot")
+			// if the send fails requeue this snapshot for the next reconcilation cycle
+			CachedResources := r.CachedData[migrationRequest.Name]
+			CachedResources.PreviousSnapshot = snapshot
+			r.CachedData[migrationRequest.Name] = CachedResources
 			return ctrl.Result{}, err
 		}
 
-		// incriment the number of snapshots
+		// if the send succeeded incriment the number of confirmed (sent) snapshots
 		migrationRequest.Status.ConfirmedSnapshotCount++
 		if err := r.Status().Update(ctx, migrationRequest); err != nil {
 			l.Error(err, "failed to update migrationRequest status")
@@ -570,6 +579,7 @@ func NewCachedResources() CachedResources {
 		VolumeSnapshotClass:   &snapv1.VolumeSnapshotClass{},
 		ConfigMap:             &corev1.ConfigMap{},
 		Secret:                &corev1.Secret{},
+		PreviousSnapshot:      &snapv1.VolumeSnapshot{},
 	}
 }
 

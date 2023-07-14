@@ -12,7 +12,7 @@ spec:
   # TODO(user): Add fields here
   podName: fio
   desiredSnapshotCount: 3
-  snapInterval: 30
+  snapInterval: 10
   destination:
     user: worker2
     remotePool: zfspv-pool
