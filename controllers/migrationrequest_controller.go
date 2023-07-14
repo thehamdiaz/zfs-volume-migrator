@@ -406,18 +406,25 @@ func (r *MigrationRequestReconciler) createAndEnsureVolumeSnapshotReadiness(ctx 
 		return nil, err
 	}
 
-	for {
-		var snapshot snapv1.VolumeSnapshot
-		if err := r.Get(ctx, types.NamespacedName{Namespace: vs.Namespace, Name: vs.Name}, &snapshot); err != nil {
-			return nil, err
+	var snapshot snapv1.VolumeSnapshot
+	err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
+		err := r.Get(ctx, types.NamespacedName{Namespace: vs.Namespace, Name: vs.Name}, &snapshot)
+		if err != nil {
+			return false, err
 		}
 
 		if snapshot.Status != nil && snapshot.Status.ReadyToUse != nil && *snapshot.Status.ReadyToUse {
-			return &snapshot, nil
+			return true, nil
 		}
 
-		time.Sleep(time.Second)
+		return false, nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
+
+	return &snapshot, nil
 }
 
 func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migrationRequest *apiv1.MigrationRequest, vs *snapv1.VolumeSnapshot) error {
