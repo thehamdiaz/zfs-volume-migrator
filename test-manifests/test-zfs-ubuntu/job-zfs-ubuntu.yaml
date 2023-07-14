@@ -7,40 +7,14 @@ spec:
     spec:
       containers:
       - name: zfs-container
-        image: thehamdiaz/zfs-ubuntu:v10.0
+        image: thehamdiaz/zfs-ubuntu:v13.0
+        command: [
+          "/bin/sh",
+					"-c",
+					"sleep infinity",
+        ]        
         securityContext:
           privileged: true
-        env:
-        - name: SNAPSHOT
-          valueFrom:
-            configMapKeyRef:
-              name: snapshot-migration-config
-              key: snapshot
-        - name: USER
-          valueFrom:
-            configMapKeyRef:
-              name: snapshot-migration-config
-              key: user
-        - name: REMOTE_HOST
-          valueFrom:
-            configMapKeyRef:
-              name: snapshot-migration-config
-              key: remoteHost
-        - name: POOL
-          valueFrom:
-            configMapKeyRef:
-              name: snapshot-migration-config
-              key: remotePool
-        - name: DATASET
-          valueFrom:
-            configMapKeyRef:
-              name: snapshot-migration-config
-              key: remoteDataset
-        - name: PREVIOUS
-          valueFrom:
-            configMapKeyRef:
-              name: snapshot-migration-config
-              key: previous
         envFrom:
         - configMapRef:
             name: snapshot-migration-config
@@ -64,3 +38,4 @@ spec:
       - name: ssh-keys
         secret:
           secretName: ssh-keys-secret
+

@@ -1,7 +1,7 @@
 kind: PersistentVolumeClaim
 apiVersion: v1
 metadata:
-  name: pvc-restored
+  name: pvc-restored-testdataset1
 spec:
   storageClassName: openebs-zfspv
   accessModes:

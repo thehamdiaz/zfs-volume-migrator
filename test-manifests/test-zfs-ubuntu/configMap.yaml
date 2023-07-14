@@ -3,9 +3,10 @@ kind: ConfigMap
 metadata:
   name: snapshot-migration-config
 data:
-  PREVIOUS: zfspv-pool/exdataset@snapshot-b769081a-f900-4190-b97e-d1d534e5436d
-  SNAPSHOT: zfspv-pool/exdataset@snap2
+  PREVIOUS: None
+  SNAPSHOT: zfspv-pool/pvc-c65309e9-8687-42e3-a15b-77ac2b248ba6@snapshot-1c754304-bc63-4116-8c20-30de3c3782df
   USER: worker2
   REMOTEPOOL: zfspv-pool
   REMOTEDATASET: exdataset_recv
-  REMOTEHOST: 10.0.4.80
+  REMOTEHOSTIP: 10.0.4.80
+  REMOTEHOSTNAME: worker2 

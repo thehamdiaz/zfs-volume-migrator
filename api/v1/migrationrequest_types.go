@@ -38,19 +38,21 @@ type MigrationRequestSpec struct {
 }
 
 type DestinationDef struct {
-	User          string `json:"user,omitempty"`
-	RemotePool    string `json:"remotePool,omitempty"`
-	RemoteDataset string `json:"remoteDataset,omitempty"`
-	RemoteHost    string `json:"remoteHost,omitempty"`
+	User           string `json:"user,omitempty"`
+	RemotePool     string `json:"remotePool,omitempty"`
+	RemoteDataset  string `json:"remoteDataset,omitempty"`
+	RemoteHostIP   string `json:"remoteHostIP,omitempty"`
+	RemoteHostName string `json:"remoteHostName,omitempty"`
 }
 
 // MigrationRequestStatus defines the observed state of MigrationRequest
 type MigrationRequestStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	SnapshotCount      int    `json:"snapshotCreated,omitempty"`
-	AllSnapshotsSent   string `json:"allSnapshotSent,omitempty"`
-	MigrationCompleted string `json:"migrationComplete,omitempty"`
+	SnapshotCount          int    `json:"snapshotCreated,omitempty"`
+	ConfirmedSnapshotCount int    `json:"confirmedSnapshotCreated,omitempty"`
+	AllSnapshotsSent       string `json:"allSnapshotSent,omitempty"`
+	MigrationCompleted     string `json:"migrationComplete,omitempty"`
 }
 
 //+kubebuilder:object:root=true

@@ -1,8 +1,19 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: my-fio1
+  name: my-fio
 spec:
+  nodeSelector:
+    kubernetes.io/hostname: worker2
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: In
+                values:
+                  - worker2
   restartPolicy: Never
   containers:
   - name: perfrunner
@@ -16,4 +27,4 @@ spec:
   volumes:
   - name: fio-vol
     persistentVolumeClaim:
-      claimName: my-pvc1
+      claimName: restored-csi-zfspv1

@@ -41,7 +41,9 @@ spec:
                 properties:
                   remoteDataset:
                     type: string
-                  remoteHost:
+                  remoteHostIP:
+                    type: string
+                  remoteHostName:
                     type: string
                   remotePool:
                     type: string
@@ -60,6 +62,8 @@ spec:
             properties:
               allSnapshotSent:
                 type: string
+              confirmedSnapshotCreated:
+                type: integer
               migrationComplete:
                 type: string
               snapshotCreated:

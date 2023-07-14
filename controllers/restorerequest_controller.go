@@ -19,13 +19,16 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"time"
 
 	openebszfsv1 "github.com/openebs/zfs-localpv/pkg/apis/openebs.io/zfs/v1"
 	apiv1 "github.com/thehamdiaz/first-controller.git/api/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -73,8 +76,22 @@ func (r *RestoreRequestReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil
 	}
 
+	// create configmap
+	config, err := r.createConfigMapRestoreObject(ctx, restoreReq)
+	if err != nil {
+		log.Error(err, "unable to create the ConfigMap")
+		return ctrl.Result{}, err
+	}
+
+	//change mount point of the dataset to legacy
+	err = r.CreateLegacyDatasetJob(ctx, restoreReq, config)
+	if err != nil {
+		log.Error(err, "unable to set mount point to legacy")
+		return ctrl.Result{}, err
+	}
+
 	// Create PV
-	err := r.createPV(ctx, restoreReq)
+	err = r.createPV(ctx, restoreReq)
 	if err != nil {
 		restoreReq.Status.Succeeded = "False"
 		restoreReq.Status.Message = fmt.Sprintf("Failed to create PV: %v", err)
@@ -274,6 +291,106 @@ func (r *RestoreRequestReconciler) updateMigrationRequestStatus(ctx context.Cont
 	}
 
 	return nil
+}
+
+func (r *RestoreRequestReconciler) CreateLegacyDatasetJob(ctx context.Context, restoreRequest *apiv1.RestoreRequest, config *corev1.ConfigMap) error {
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "legacy-dataset-" + restoreRequest.Spec.Names.ZFSDatasetName,
+			Namespace: restoreRequest.Namespace,
+		},
+		Spec: batchv1.JobSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "zfs-container",
+							Image: "thehamdiaz/zfs-make-legacy-ubuntu:v1.0",
+							SecurityContext: &corev1.SecurityContext{
+								Privileged: func() *bool { b := true; return &b }(),
+							},
+							EnvFrom: []corev1.EnvFromSource{
+								{
+									ConfigMapRef: &corev1.ConfigMapEnvSource{
+										LocalObjectReference: corev1.LocalObjectReference{
+											Name: config.Name,
+										},
+									},
+								},
+							},
+						},
+					},
+					RestartPolicy: "Never",
+					Affinity: &corev1.Affinity{
+						NodeAffinity: &corev1.NodeAffinity{
+							RequiredDuringSchedulingIgnoredDuringExecution: &corev1.NodeSelector{
+								NodeSelectorTerms: []corev1.NodeSelectorTerm{
+									{
+										MatchExpressions: []corev1.NodeSelectorRequirement{
+											{
+												Key:      "kubernetes.io/hostname",
+												Operator: corev1.NodeSelectorOpIn,
+												Values:   []string{restoreRequest.Spec.Names.TargetNodeName},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	// Create the Job
+	err := r.Create(ctx, job)
+	if err != nil {
+		return err
+	}
+
+	// Wait for the Job to finish
+	jobKey := types.NamespacedName{Name: job.Name, Namespace: job.Namespace}
+	err = wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
+		if err := r.Get(ctx, jobKey, job); err != nil {
+			return false, err
+		}
+
+		if job.Status.CompletionTime != nil {
+			if job.Status.Succeeded > 0 {
+				return true, nil
+			}
+			return false, fmt.Errorf("job failed: %s", job.Status.String())
+		}
+
+		return false, nil
+	})
+
+	return err
+}
+
+func (r *RestoreRequestReconciler) createConfigMapRestoreObject(ctx context.Context, restoreRequest *apiv1.RestoreRequest) (*corev1.ConfigMap, error) {
+	configMap := &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "ConfigMap",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "legacy-dataset-config-",
+			Namespace:    "default",
+		},
+		Data: map[string]string{
+			"POOLNAME":    restoreRequest.Spec.Names.ZFSPoolName,
+			"DATASETNAME": restoreRequest.Spec.Names.ZFSDatasetName,
+		},
+	}
+
+	err := r.Create(ctx, configMap)
+	if err != nil {
+		// Handle the error
+		return nil, err
+	}
+
+	return configMap, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
