@@ -520,8 +520,25 @@ func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migration
 		return err
 	}
 
-	// Wait for the Job to finish
+	// Check if the Job is created
 	jobKey := types.NamespacedName{Name: job.Name, Namespace: job.Namespace}
+	err = wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
+		if err := r.Get(ctx, jobKey, job); err != nil {
+			return false, err
+		}
+
+		if job.Status.StartTime != nil {
+			return true, nil
+		}
+
+		return false, nil
+	})
+
+	if err != nil {
+		return err
+	}
+
+	// Wait for the Job to finish
 	err = wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
 		if err := r.Get(ctx, jobKey, job); err != nil {
 			return false, err
@@ -541,10 +558,14 @@ func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migration
 }
 
 func (r *MigrationRequestReconciler) stopPod(ctx context.Context, migrationRequest *apiv1.MigrationRequest) error {
-	pod := r.CachedData[migrationRequest.Name].Pod
+	pod := &corev1.Pod{}
+
+	if err := r.Get(ctx, types.NamespacedName{Namespace: migrationRequest.Namespace, Name: migrationRequest.Spec.PodName}, pod); err != nil {
+		return err
+	}
 
 	// Set the pod's deletion timestamp to stop it
-	gracePeriodSeconds := int64(0)
+	gracePeriodSeconds := int64(30)
 	deleteOptions := client.DeleteOptions{
 		GracePeriodSeconds: &gracePeriodSeconds,
 	}
@@ -554,20 +575,20 @@ func (r *MigrationRequestReconciler) stopPod(ctx context.Context, migrationReque
 	}
 
 	// Wait until the pod is deleted
-	for {
-		err = r.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, pod)
+	err = wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
+		err := r.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, pod)
 		if err != nil {
 			if errors.IsNotFound(err) {
 				// Pod is deleted
-				break
+				return true, nil
 			}
-			return err
+			return false, err
 		}
 
-		time.Sleep(time.Second)
-	}
+		return false, nil
+	})
 
-	return nil
+	return err
 }
 
 func NewCachedResources() CachedResources {
