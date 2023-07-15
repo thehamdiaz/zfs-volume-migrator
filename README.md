@@ -7,15 +7,15 @@ You need to:
 2. configure network settings in the virtual machines. Ensure that all the machines are connected to each other and can communicate with each other.
 3. Install and enable ssh on each of the nodes.
 ```
-$ sudo apt-get install openssh-server -y
+sudo apt-get install openssh-server -y
 ```
 4. Set up meaningful host names for each node (controlplane, worker1, worker2)
 ```
-$ sudo hostnamectl set-hostname <hostname>
+sudo hostnamectl set-hostname <hostname>
 ```
 5. Disable swap on each node and also comment out swap entry in `/etc/fstabfile`
 ```
-$ swapoff -a
+sudo swapoff -a
 ```
 Install necessary Packages and add the kubernetes repo on each node’s system
 ```
@@ -30,27 +30,27 @@ cat <<EOF | sudo tee /etc/apt/sources.list.d/kubernetes.list deb https://apt.kub
 
 1. Install kubeadm, kubectl and kubelet on each node:
 ``` 
-$ sudo apt-get update
-$ sudo apt-get install -y kubelet kubeadm kubectl
+sudo apt-get update
+sudo apt-get install -y kubelet kubeadm kubectl
 ```
 2. Install Container Runtime on each node: (execute this as root)
 ```
-$ VERSION=1.27
-$ OS=xUbuntu_20.04
-$ echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
-$ echo "deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/$VERSION/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:$VERSION.list
+VERSION=1.27
+OS=xUbuntu_20.04
+echo "deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
+echo "deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/$VERSION/$OS/ /" > /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:$VERSION.list
 
-$ curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/$VERSION/$OS/Release.key | apt-key add -
-$ curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/Release.key | apt-key add -
+curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/$VERSION/$OS/Release.key | apt-key add -
+curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/Release.key | apt-key add -
 
-$ apt-get update
-$ apt-get install cri-o cri-o-runc
+apt-get update
+apt-get install cri-o cri-o-runc
 ```
 3. Install the control plane:
    
 In the master node, execute `kubeadm init` command to deploy control plane components:
 ```
-$ kubeadm init --pod-network-cidr=192.168.2.0/16
+kubeadm init --pod-network-cidr=192.168.2.0/16
 ```
 When the above command execution is successful, it will yield a command to be executed on all the worker nodes to configure them with the master.
 4. Join the worker nodes:
@@ -90,7 +90,7 @@ Before installing ZFS driver we need to make sure that the Kubernetes Cluster me
 All the nodes should have `zfsutils-linux` installed. We should go to the each node of the cluster and install zfs utils
 
 ```
-$ apt-get install zfsutils-linux
+apt-get install zfsutils-linux
 ````
 
 Go to each node and create the ZFS Pool, which will be used for provisioning the volumes. You can use the disk in each VM (say /dev/sdb) to create a stripped pool using the below command.
@@ -102,14 +102,14 @@ zpool create zfspv-pool /dev/sdb
 You can install the latest release of OpenEBS ZFS driver by running the following command in the master node:
 
 ```
-$ kubectl apply -f https://openebs.github.io/charts/zfs-operator.yaml
+kubectl apply -f https://openebs.github.io/charts/zfs-operator.yaml
 ```
 
 		
 4. Verify that the ZFS driver Components are installed and running using below command :
 		
 ```
-$ kubectl get pods -n kube-system -l role=openebs-zfs
+kubectl get pods -n kube-system -l role=openebs-zfs
 ```
 
 # Setting up the dev environment (the workstation)
@@ -137,14 +137,14 @@ scp username@controlplane:/home/username/.kube /home/workstation_user/.kube
    
 Install go:
 ```
-$ curl -OL https://golang.org/dl/go1.20.5.linux-amd64.tar.gz
-$ sudo tar -C /usr/local -xvf go1.20.5.linux-amd64.tar.gz
+curl -OL https://golang.org/dl/go1.20.5.linux-amd64.tar.gz
+sudo tar -C /usr/local -xvf go1.20.5.linux-amd64.tar.gz
 ```
 
 Install Kubebuilder:
 ```
-$ curl -L -o kubebuilder https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)
-$ chmod +x kubebuilder && mv kubebuilder /usr/local/bin/
+curl -L -o kubebuilder https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)
+chmod +x kubebuilder && mv kubebuilder /usr/local/bin/
 ```
 
 3. Clone this github repo
