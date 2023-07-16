@@ -348,6 +348,8 @@ func (r *RestoreRequestReconciler) CreateLegacyDatasetJob(ctx context.Context, r
 		return err
 	}
 
+	time.Sleep(5 * time.Second)
+
 	// Wait for the Job to finish
 	jobKey := types.NamespacedName{Name: job.Name, Namespace: job.Namespace}
 	err = wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {

@@ -144,14 +144,25 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		r.CachedData[migrationRequest.Name] = cachedResources
 	}
 
-	// stop condition (can and will be modified)
-	if migrationRequest.Status.ConfirmedSnapshotCount < migrationRequest.Spec.DesiredSnapshotCount-1 {
-		snapshot := &snapv1.VolumeSnapshot{}
-		var err error
-		//Previous snapshot wasn't sent
+	snapshot := &snapv1.VolumeSnapshot{}
+	var err error
+	var new bool
+
+	// stop condition isn't met
+	if migrationRequest.Status.ConfirmedSnapshotCount < migrationRequest.Spec.DesiredSnapshotCount {
+		//Previous snapshot faild to send
 		if migrationRequest.Status.ConfirmedSnapshotCount < migrationRequest.Status.SnapshotCount {
 			snapshot = r.CachedData[migrationRequest.Name].PreviousSnapshot
-		} else if migrationRequest.Status.ConfirmedSnapshotCount == migrationRequest.Status.SnapshotCount {
+			new = false
+		} else {
+			//last snapshot to be sent
+			if migrationRequest.Status.ConfirmedSnapshotCount == migrationRequest.Spec.DesiredSnapshotCount-1 {
+				err = r.stopPod(ctx, migrationRequest)
+				if err != nil {
+					l.Error(err, "failed to stop the pod")
+					return ctrl.Result{}, err
+				}
+			}
 			snapshot, err = r.createAndEnsureVolumeSnapshotReadiness(ctx, migrationRequest)
 			if err != nil {
 				l.Error(err, "unable to create the Volumesnapshot")
@@ -163,9 +174,9 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 				l.Error(err, "failed to update migrationRequest status")
 				return ctrl.Result{}, err
 			}
+			new = true
 		}
-
-		err = r.sendSnapshot(ctx, migrationRequest, snapshot)
+		err = r.sendSnapshot(ctx, migrationRequest, snapshot, new)
 		if err != nil {
 			l.Error(err, "failed to send snapshot")
 			// if the send fails requeue this snapshot for the next reconcilation cycle
@@ -174,56 +185,41 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			r.CachedData[migrationRequest.Name] = CachedResources
 			return ctrl.Result{}, err
 		}
-
 		// if the send succeeded incriment the number of confirmed (sent) snapshots
 		migrationRequest.Status.ConfirmedSnapshotCount++
 		if err := r.Status().Update(ctx, migrationRequest); err != nil {
 			l.Error(err, "failed to update migrationRequest status")
 			return ctrl.Result{}, err
 		}
-
-		// Wait for the specified interval
-		time.Sleep(time.Second * time.Duration(migrationRequest.Spec.SnapInterval))
-
-		// Enqueue the resource for the next reconciliation
-		return ctrl.Result{Requeue: true}, nil
-	} else {
-		err := r.stopPod(ctx, migrationRequest)
-		if err != nil {
-			l.Error(err, "failed to stop the pod")
-			return ctrl.Result{}, err
-		}
-		snapshot, err := r.createAndEnsureVolumeSnapshotReadiness(ctx, migrationRequest)
-		if err != nil {
-			l.Error(err, "unable to create the Volumesnapshot")
-			return ctrl.Result{}, err
-		}
-		err = r.sendSnapshot(ctx, migrationRequest, snapshot)
-		if err != nil {
-			l.Error(err, "failed to send snapshot")
-			return ctrl.Result{}, err
-		}
-		// At this point all the snapshots are sent
-		migrationRequest.Status.AllSnapshotsSent = "True"
-		if err := r.Status().Update(ctx, migrationRequest); err != nil {
-			l.Error(err, "failed to update migrationRequest status")
-			return ctrl.Result{}, err
-		}
-		// This will be created in the remote node trigerring the restoring controller
-		_, err = r.createRestoreRequest(ctx, migrationRequest)
-		if err != nil {
-			l.Error(err, "failed to create restoreRequest")
-			return ctrl.Result{}, err
-		}
-		/*
-			// At this point the migration is completed  this should be executed by the restore cotroller
-			migrationRequest.Status.MigrationCompleted = "True"
+		//last snapshot is sent (stop condition is met) no need to wait and requeue
+		if migrationRequest.Status.ConfirmedSnapshotCount == migrationRequest.Spec.DesiredSnapshotCount {
+			// At this point all the snapshots are sent
+			migrationRequest.Status.AllSnapshotsSent = "True"
 			if err := r.Status().Update(ctx, migrationRequest); err != nil {
 				l.Error(err, "failed to update migrationRequest status")
 				return ctrl.Result{}, err
 			}
-		*/
+			// This will be created in the remote node trigerring the restoring controller
+			_, err = r.createRestoreRequest(ctx, migrationRequest)
+			if err != nil {
+				l.Error(err, "failed to create restoreRequest")
+				return ctrl.Result{}, err
+			}
+		} else {
+			// Wait for the specified interval
+			time.Sleep(time.Second * time.Duration(migrationRequest.Spec.SnapInterval))
+			// Enqueue the resource for the next reconciliation
+			return ctrl.Result{Requeue: true}, nil
+		}
 	}
+	/*
+		// At this point the migration is completed  this should be executed by the restore cotroller
+		migrationRequest.Status.MigrationCompleted = "True"
+		if err := r.Status().Update(ctx, migrationRequest); err != nil {
+			l.Error(err, "failed to update migrationRequest status")
+			return ctrl.Result{}, err
+		}
+	*/
 
 	return ctrl.Result{}, nil
 }
@@ -406,6 +402,8 @@ func (r *MigrationRequestReconciler) createAndEnsureVolumeSnapshotReadiness(ctx 
 		return nil, err
 	}
 
+	time.Sleep(5 * time.Second)
+
 	var snapshot snapv1.VolumeSnapshot
 	err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
 		err := r.Get(ctx, types.NamespacedName{Namespace: vs.Namespace, Name: vs.Name}, &snapshot)
@@ -427,7 +425,7 @@ func (r *MigrationRequestReconciler) createAndEnsureVolumeSnapshotReadiness(ctx 
 	return &snapshot, nil
 }
 
-func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migrationRequest *apiv1.MigrationRequest, vs *snapv1.VolumeSnapshot) error {
+func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migrationRequest *apiv1.MigrationRequest, vs *snapv1.VolumeSnapshot, new bool) error {
 	// Fetch the VolumeSnapshotContent
 	var vsContent snapv1.VolumeSnapshotContent
 	err := r.Get(ctx, types.NamespacedName{Name: *vs.Status.BoundVolumeSnapshotContentName}, &vsContent)
@@ -435,15 +433,17 @@ func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migration
 		return err
 	}
 
-	// Modify the ConfigMap
-	r.CachedData[migrationRequest.Name].ConfigMap.Data["PREVIOUS"] = r.CachedData[migrationRequest.Name].ConfigMap.Data["SNAPSHOT"]
-	newSnapshot := r.CachedData[migrationRequest.Name].StorageClass.Parameters["poolname"] + "/" + *vsContent.Status.SnapshotHandle
-	r.CachedData[migrationRequest.Name].ConfigMap.Data["SNAPSHOT"] = newSnapshot
+	if new {
+		// Modify the ConfigMap
+		r.CachedData[migrationRequest.Name].ConfigMap.Data["PREVIOUS"] = r.CachedData[migrationRequest.Name].ConfigMap.Data["SNAPSHOT"]
+		newSnapshot := r.CachedData[migrationRequest.Name].StorageClass.Parameters["poolname"] + "/" + *vsContent.Status.SnapshotHandle
+		r.CachedData[migrationRequest.Name].ConfigMap.Data["SNAPSHOT"] = newSnapshot
 
-	// Apply the updated ConfigMap
-	err = r.Update(ctx, r.CachedData[migrationRequest.Name].ConfigMap)
-	if err != nil {
-		return err
+		// Apply the updated ConfigMap
+		err = r.Update(ctx, r.CachedData[migrationRequest.Name].ConfigMap)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Create the Job
@@ -527,25 +527,10 @@ func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migration
 		return err
 	}
 
-	// Check if the Job is created
-	jobKey := types.NamespacedName{Name: job.Name, Namespace: job.Namespace}
-	err = wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
-		if err := r.Get(ctx, jobKey, job); err != nil {
-			return false, err
-		}
-
-		if job.Status.StartTime != nil {
-			return true, nil
-		}
-
-		return false, nil
-	})
-
-	if err != nil {
-		return err
-	}
+	time.Sleep(5 * time.Second)
 
 	// Wait for the Job to finish
+	jobKey := types.NamespacedName{Name: job.Name, Namespace: job.Namespace}
 	err = wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
 		if err := r.Get(ctx, jobKey, job); err != nil {
 			return false, err
@@ -568,6 +553,7 @@ func (r *MigrationRequestReconciler) stopPod(ctx context.Context, migrationReque
 	pod := &corev1.Pod{}
 
 	if err := r.Get(ctx, types.NamespacedName{Namespace: migrationRequest.Namespace, Name: migrationRequest.Spec.PodName}, pod); err != nil {
+		fmt.Println("stuck here")
 		return err
 	}
 
@@ -580,6 +566,8 @@ func (r *MigrationRequestReconciler) stopPod(ctx context.Context, migrationReque
 	if err != nil {
 		return err
 	}
+
+	time.Sleep(5 * time.Second)
 
 	// Wait until the pod is deleted
 	err = wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {

@@ -12,7 +12,7 @@ spec:
           "/bin/sh",
 					"-c",
 					"sleep infinity",
-        ]        
+        ]
         securityContext:
           privileged: true
         envFrom:

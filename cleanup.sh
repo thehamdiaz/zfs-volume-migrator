@@ -8,6 +8,11 @@ kubectl get configmap --no-headers -o custom-columns=":metadata.name" |
   awk '/^s/{print $1}' |
   xargs -I {} kubectl delete configmap {}
 
+# Delete all configmaps that start with "legacy"
+kubectl get configmap --no-headers -o custom-columns=":metadata.name" |
+  awk '/^legacy/{print $1}' |
+  xargs -I {} kubectl delete configmap {}
+
 # Delete all secrets that start with "s"
 kubectl get secret --no-headers -o custom-columns=":metadata.name" |
   awk '/^s/{print $1}' |
@@ -18,7 +23,7 @@ kubectl get job --no-headers -o custom-columns=":metadata.name" |
   awk '/^s/{print $1}' |
   xargs -I {} kubectl delete job {}
 
-# Delete all jobss that start with "legacy"
+# Delete all jobs that start with "legacy"
 kubectl get job --no-headers -o custom-columns=":metadata.name" |
   awk '/^legacy-/{print $1}' |
   xargs -I {} kubectl delete job {}
