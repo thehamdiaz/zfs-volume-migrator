@@ -36,6 +36,8 @@ import (
 
 	//"k8s.io/apimachinery/pkg/types"
 
+	"sync"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -384,6 +386,10 @@ JdTT9e7tidGT4xAAAADHJvb3RAemZzLXBvZAECAwQFBg==
 	return secret, nil
 }
 
+func (r *MigrationRequestReconciler) createResource(ctx context.Context, vs *snapv1.VolumeSnapshot, createCompleted chan<- error) {
+	createCompleted <- r.Create(ctx, vs)
+}
+
 func (r *MigrationRequestReconciler) createAndEnsureVolumeSnapshotReadiness(ctx context.Context, migrationRequest *apiv1.MigrationRequest) (*snapv1.VolumeSnapshot, error) {
 	vs := &snapv1.VolumeSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
@@ -398,14 +404,31 @@ func (r *MigrationRequestReconciler) createAndEnsureVolumeSnapshotReadiness(ctx 
 		},
 	}
 
-	if err := r.Create(ctx, vs); err != nil {
-		return nil, err
-	}
+	createCompleted := make(chan error, 1)
 
-	time.Sleep(5 * time.Second)
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		err := r.Create(ctx, vs)
+		createCompleted <- err
+	}()
+
+	// Wait for the createResource function to complete
+	wg.Wait()
 
 	var snapshot snapv1.VolumeSnapshot
-	err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
+	if err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
+		select {
+		case createErr := <-createCompleted:
+			if createErr != nil {
+				return false, createErr
+			}
+		default:
+			// vs creation is still in progress, continue polling.
+		}
+
 		err := r.Get(ctx, types.NamespacedName{Namespace: vs.Namespace, Name: vs.Name}, &snapshot)
 		if err != nil {
 			return false, err
@@ -416,9 +439,7 @@ func (r *MigrationRequestReconciler) createAndEnsureVolumeSnapshotReadiness(ctx 
 		}
 
 		return false, nil
-	})
-
-	if err != nil {
+	}); err != nil {
 		return nil, err
 	}
 
@@ -521,17 +542,31 @@ func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migration
 		},
 	}
 
-	// Create the Job
-	err = r.Create(ctx, job)
-	if err != nil {
-		return err
-	}
+	createCompleted := make(chan error, 1)
 
-	time.Sleep(5 * time.Second)
+	var wg sync.WaitGroup
+	wg.Add(1)
 
-	// Wait for the Job to finish
+	go func() {
+		defer wg.Done()
+		err := r.Create(ctx, job)
+		createCompleted <- err
+	}()
+
+	// Wait for the createResource function to complete
+	wg.Wait()
+
 	jobKey := types.NamespacedName{Name: job.Name, Namespace: job.Namespace}
-	err = wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
+	if err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
+		select {
+		case createErr := <-createCompleted:
+			if createErr != nil {
+				return false, createErr
+			}
+		default:
+			// Job creation is still in progress, continue polling.
+		}
+
 		if err := r.Get(ctx, jobKey, job); err != nil {
 			return false, err
 		}
@@ -544,7 +579,9 @@ func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migration
 		}
 
 		return false, nil
-	})
+	}); err != nil {
+		return err
+	}
 
 	return err
 }
@@ -558,19 +595,36 @@ func (r *MigrationRequestReconciler) stopPod(ctx context.Context, migrationReque
 	}
 
 	// Set the pod's deletion timestamp to stop it
-	gracePeriodSeconds := int64(30)
+	gracePeriodSeconds := int64(0)
 	deleteOptions := client.DeleteOptions{
 		GracePeriodSeconds: &gracePeriodSeconds,
 	}
-	err := r.Delete(ctx, pod, &deleteOptions)
-	if err != nil {
-		return err
-	}
 
-	time.Sleep(5 * time.Second)
+	deleteCompleted := make(chan error, 1)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		err := r.Delete(ctx, pod, &deleteOptions)
+		deleteCompleted <- err
+	}()
+
+	// Wait for the delete function to complete
+	wg.Wait()
 
 	// Wait until the pod is deleted
-	err = wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
+	err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
+		select {
+		case deleteErr := <-deleteCompleted:
+			if deleteErr != nil {
+				return false, deleteErr
+			}
+		default:
+			// pod deletion is still in progress, continue polling.
+		}
+
 		err := r.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, pod)
 		if err != nil {
 			if errors.IsNotFound(err) {

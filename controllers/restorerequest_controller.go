@@ -30,6 +30,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
+	"sync"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -342,17 +344,25 @@ func (r *RestoreRequestReconciler) CreateLegacyDatasetJob(ctx context.Context, r
 			},
 		},
 	}
-	// Create the Job
-	err := r.Create(ctx, job)
-	if err != nil {
-		return err
-	}
 
-	time.Sleep(5 * time.Second)
+	// Create the Job
+	createCompleted := make(chan error, 1)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		err := r.Create(ctx, job)
+		createCompleted <- err
+	}()
+
+	// Wait for the createResource function to complete
+	wg.Wait()
 
 	// Wait for the Job to finish
 	jobKey := types.NamespacedName{Name: job.Name, Namespace: job.Namespace}
-	err = wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
+	err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
 		if err := r.Get(ctx, jobKey, job); err != nil {
 			return false, err
 		}
