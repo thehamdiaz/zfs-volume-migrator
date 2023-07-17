@@ -159,6 +159,7 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		} else {
 			//last snapshot to be sent
 			if migrationRequest.Status.ConfirmedSnapshotCount == migrationRequest.Spec.DesiredSnapshotCount-1 {
+				fmt.Println("here")
 				err = r.stopPod(ctx, migrationRequest)
 				if err != nil {
 					l.Error(err, "failed to stop the pod")
@@ -172,7 +173,9 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			}
 			// incriment the number of created snapshots
 			migrationRequest.Status.SnapshotCount++
-			if err = r.Status().Update(ctx, migrationRequest); err != nil {
+
+			updateCompleted := r.updateStatusAndSync(ctx, migrationRequest)
+			if err = <-updateCompleted; err != nil {
 				l.Error(err, "failed to update migrationRequest status")
 				return ctrl.Result{}, err
 			}
@@ -189,7 +192,9 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		}
 		// if the send succeeded incriment the number of confirmed (sent) snapshots
 		migrationRequest.Status.ConfirmedSnapshotCount++
-		if err := r.Status().Update(ctx, migrationRequest); err != nil {
+
+		updateCompleted := r.updateStatusAndSync(ctx, migrationRequest)
+		if err = <-updateCompleted; err != nil {
 			l.Error(err, "failed to update migrationRequest status")
 			return ctrl.Result{}, err
 		}
@@ -197,7 +202,9 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		if migrationRequest.Status.ConfirmedSnapshotCount == migrationRequest.Spec.DesiredSnapshotCount {
 			// At this point all the snapshots are sent
 			migrationRequest.Status.AllSnapshotsSent = "True"
-			if err := r.Status().Update(ctx, migrationRequest); err != nil {
+
+			updateCompleted := r.updateStatusAndSync(ctx, migrationRequest)
+			if err = <-updateCompleted; err != nil {
 				l.Error(err, "failed to update migrationRequest status")
 				return ctrl.Result{}, err
 			}
@@ -255,10 +262,11 @@ func (r *MigrationRequestReconciler) createRestoreRequest(ctx context.Context, m
 		},
 	}
 
-	if err := r.Create(ctx, restoreReq); err != nil {
+	err := r.Create(ctx, restoreReq)
+	if err != nil {
+		// Handle the error
 		return nil, err
 	}
-
 	return restoreReq, nil
 }
 
@@ -386,10 +394,6 @@ JdTT9e7tidGT4xAAAADHJvb3RAemZzLXBvZAECAwQFBg==
 	return secret, nil
 }
 
-func (r *MigrationRequestReconciler) createResource(ctx context.Context, vs *snapv1.VolumeSnapshot, createCompleted chan<- error) {
-	createCompleted <- r.Create(ctx, vs)
-}
-
 func (r *MigrationRequestReconciler) createAndEnsureVolumeSnapshotReadiness(ctx context.Context, migrationRequest *apiv1.MigrationRequest) (*snapv1.VolumeSnapshot, error) {
 	vs := &snapv1.VolumeSnapshot{
 		ObjectMeta: metav1.ObjectMeta{
@@ -404,19 +408,8 @@ func (r *MigrationRequestReconciler) createAndEnsureVolumeSnapshotReadiness(ctx 
 		},
 	}
 
-	createCompleted := make(chan error, 1)
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-		err := r.Create(ctx, vs)
-		createCompleted <- err
-	}()
-
-	// Wait for the createResource function to complete
-	wg.Wait()
+	//Create volumeSnapshot and wait to sync
+	createCompleted := r.createAndSync(ctx, vs)
 
 	var snapshot snapv1.VolumeSnapshot
 	if err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
@@ -431,6 +424,7 @@ func (r *MigrationRequestReconciler) createAndEnsureVolumeSnapshotReadiness(ctx 
 
 		err := r.Get(ctx, types.NamespacedName{Namespace: vs.Namespace, Name: vs.Name}, &snapshot)
 		if err != nil {
+			fmt.Println("inside the get vs")
 			return false, err
 		}
 
@@ -542,19 +536,8 @@ func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migration
 		},
 	}
 
-	createCompleted := make(chan error, 1)
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-		err := r.Create(ctx, job)
-		createCompleted <- err
-	}()
-
-	// Wait for the createResource function to complete
-	wg.Wait()
+	//Create job and wait sync
+	createCompleted := r.createAndSync(ctx, job)
 
 	jobKey := types.NamespacedName{Name: job.Name, Namespace: job.Namespace}
 	if err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
@@ -595,24 +578,15 @@ func (r *MigrationRequestReconciler) stopPod(ctx context.Context, migrationReque
 	}
 
 	// Set the pod's deletion timestamp to stop it
-	gracePeriodSeconds := int64(0)
+	gracePeriodSeconds := int64(10)
 	deleteOptions := client.DeleteOptions{
 		GracePeriodSeconds: &gracePeriodSeconds,
 	}
 
-	deleteCompleted := make(chan error, 1)
+	// delete pod and wait sync
+	deleteCompleted := r.deleteAndSync(ctx, pod, &deleteOptions)
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-		err := r.Delete(ctx, pod, &deleteOptions)
-		deleteCompleted <- err
-	}()
-
-	// Wait for the delete function to complete
-	wg.Wait()
+	time.Sleep(2 * time.Second)
 
 	// Wait until the pod is deleted
 	err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
@@ -638,6 +612,57 @@ func (r *MigrationRequestReconciler) stopPod(ctx context.Context, migrationReque
 	})
 
 	return err
+}
+
+func (r *MigrationRequestReconciler) createAndSync(ctx context.Context, obj client.Object) chan error {
+
+	createCompleted := make(chan error, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		err := r.Create(ctx, obj)
+		createCompleted <- err
+	}()
+
+	// Wait for the createResource function to complete
+	wg.Wait()
+	return createCompleted
+}
+
+func (r *MigrationRequestReconciler) deleteAndSync(ctx context.Context, obj client.Object, deleteOptions client.DeleteOption) chan error {
+
+	deleteCompleted := make(chan error, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		err := r.Delete(ctx, obj, deleteOptions)
+		deleteCompleted <- err
+	}()
+
+	// Wait for the createResource function to complete
+	wg.Wait()
+	return deleteCompleted
+}
+
+func (r *MigrationRequestReconciler) updateStatusAndSync(ctx context.Context, obj client.Object) chan error {
+
+	updateCompleted := make(chan error, 1)
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+		err := r.Status().Update(ctx, obj)
+		updateCompleted <- err
+	}()
+
+	// Wait for the createResource function to complete
+	wg.Wait()
+	return updateCompleted
 }
 
 func NewCachedResources() CachedResources {
