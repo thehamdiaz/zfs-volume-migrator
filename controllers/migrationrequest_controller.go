@@ -234,6 +234,22 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 }
 
 func (r *MigrationRequestReconciler) createRestoreRequest(ctx context.Context, migrationRequest *apiv1.MigrationRequest) (*apiv1.RestoreRequest, error) {
+	/*
+		// Path to the kubeconfig file
+		kubeconfig := filepath.Join(homedir.HomeDir(), ".kube", "remoteconfig")
+
+		// Build the Kubernetes client configuration from the kubeconfig file
+		config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+		if err != nil {
+			return nil, err
+		}
+
+		// Create the Kubernetes client
+		kubeClient, err := client.New(config, client.Options{})
+		if err != nil {
+			return nil, err
+		}
+	*/
 	// Get the capacity
 	quantity, _ := resource.ParseQuantity(r.CachedData[migrationRequest.Name].PersistentVolume.Spec.Capacity.Storage().String())
 
@@ -261,6 +277,14 @@ func (r *MigrationRequestReconciler) createRestoreRequest(ctx context.Context, m
 			},
 		},
 	}
+
+	/*
+		err = kubeClient.Create(ctx, restoreReq)
+		if err != nil {
+			// Handle the error
+			return nil, err
+		}
+	*/
 
 	err := r.Create(ctx, restoreReq)
 	if err != nil {
