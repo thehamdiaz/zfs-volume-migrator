@@ -26,7 +26,12 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	informers "k8s.io/client-go/informers"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/clientcmd"
 
+	clientv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned"
+	v1 "github.com/kubernetes-csi/external-snapshotter/client/v4/informers/externalversions/volumesnapshot/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,8 +40,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	//"k8s.io/apimachinery/pkg/types"
-
-	"sync"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,6 +51,7 @@ type MigrationRequestReconciler struct {
 	client.Client
 	Scheme     *runtime.Scheme
 	CachedData map[string]CachedResources
+	Informers  informers.SharedInformerFactory
 }
 
 type CachedResources struct {
@@ -174,8 +178,7 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			// incriment the number of created snapshots
 			migrationRequest.Status.SnapshotCount++
 
-			updateCompleted := r.updateStatusAndSync(ctx, migrationRequest)
-			if err = <-updateCompleted; err != nil {
+			if err = r.Status().Update(ctx, migrationRequest); err != nil {
 				l.Error(err, "failed to update migrationRequest status")
 				return ctrl.Result{}, err
 			}
@@ -193,8 +196,7 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		// if the send succeeded incriment the number of confirmed (sent) snapshots
 		migrationRequest.Status.ConfirmedSnapshotCount++
 
-		updateCompleted := r.updateStatusAndSync(ctx, migrationRequest)
-		if err = <-updateCompleted; err != nil {
+		if err = r.Status().Update(ctx, migrationRequest); err != nil {
 			l.Error(err, "failed to update migrationRequest status")
 			return ctrl.Result{}, err
 		}
@@ -202,12 +204,11 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		if migrationRequest.Status.ConfirmedSnapshotCount == migrationRequest.Spec.DesiredSnapshotCount {
 			// At this point all the snapshots are sent
 			migrationRequest.Status.AllSnapshotsSent = "True"
-
-			updateCompleted := r.updateStatusAndSync(ctx, migrationRequest)
-			if err = <-updateCompleted; err != nil {
+			if err = r.Status().Update(ctx, migrationRequest); err != nil {
 				l.Error(err, "failed to update migrationRequest status")
 				return ctrl.Result{}, err
 			}
+
 			// This will be created in the remote node trigerring the restoring controller
 			_, err = r.createRestoreRequest(ctx, migrationRequest)
 			if err != nil {
@@ -432,20 +433,61 @@ func (r *MigrationRequestReconciler) createAndEnsureVolumeSnapshotReadiness(ctx 
 		},
 	}
 
-	//Create volumeSnapshot and wait to sync
-	createCompleted := r.createAndSync(ctx, vs)
+	err := r.Create(ctx, vs)
+	if err != nil {
+		return nil, err
+	}
+
+	// Path to the kubeconfig file
+	kubeconfigPath := "/home/hamdi/.kube/config"
+
+	// Load the kubeconfig file
+	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		// Handle error
+	}
+
+	// Create the Kubernetes clientset
+	client, err := clientv1.NewForConfig(config)
+	if err != nil {
+		// Handle error
+	}
+
+	resyncPeriod := 10 * time.Minute // Set the resync period for cache synchronization
+
+	volumesnapshotInformer := v1.NewVolumeSnapshotInformer(client, vs.Namespace, resyncPeriod, cache.Indexers{})
+
+	if !volumesnapshotInformer.HasSynced() {
+		go volumesnapshotInformer.Run(nil)
+		if !cache.WaitForCacheSync(nil, volumesnapshotInformer.HasSynced) {
+			return nil, fmt.Errorf("failed to sync informer cache")
+		}
+	}
+
+	// Set up an event handler to track the job creation
+	vsCreated := make(chan struct{})
+	volumesnapshotInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			snapshot := obj.(*snapv1.VolumeSnapshot)
+			if snapshot.Namespace == vs.Namespace && snapshot.Name == vs.Name {
+				// Signal vs creation
+				fmt.Println(snapshot.Name)
+				close(vsCreated)
+			}
+		},
+	})
+
+	// Wait for the job creation
+	select {
+	case <-vsCreated:
+		// Job has been created, continue with the polling loop
+	case <-time.After(time.Minute):
+		// Timeout waiting for job creation
+		return nil, fmt.Errorf("timeout waiting for vs creation")
+	}
 
 	var snapshot snapv1.VolumeSnapshot
 	if err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
-		select {
-		case createErr := <-createCompleted:
-			if createErr != nil {
-				return false, createErr
-			}
-		default:
-			// vs creation is still in progress, continue polling.
-		}
-
 		err := r.Get(ctx, types.NamespacedName{Namespace: vs.Namespace, Name: vs.Name}, &snapshot)
 		if err != nil {
 			fmt.Println("inside the get vs")
@@ -560,20 +602,46 @@ func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migration
 		},
 	}
 
-	//Create job and wait sync
-	createCompleted := r.createAndSync(ctx, job)
+	err = r.Create(ctx, job)
+	if err != nil {
+		return err
+	}
+
+	jobInformer := r.Informers.Batch().V1().Jobs().Informer()
+
+	if !jobInformer.HasSynced() {
+		go jobInformer.Run(nil)
+		if !cache.WaitForCacheSync(nil, jobInformer.HasSynced) {
+			return fmt.Errorf("failed to sync informer cache")
+		}
+	}
 
 	jobKey := types.NamespacedName{Name: job.Name, Namespace: job.Namespace}
-	if err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
-		select {
-		case createErr := <-createCompleted:
-			if createErr != nil {
-				return false, createErr
-			}
-		default:
-			// Job creation is still in progress, continue polling.
-		}
 
+	// Set up an event handler to track the job creation
+	jobCreated := make(chan struct{})
+	jobInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			j := obj.(*batchv1.Job)
+			if j.Namespace == jobKey.Namespace && j.Name == jobKey.Name {
+				// Signal job creation
+				fmt.Println(jobKey.Name)
+				close(jobCreated)
+			}
+		},
+	})
+
+	// Wait for the job creation
+	select {
+	case <-jobCreated:
+		// Job has been created, continue with the polling loop
+	case <-time.After(time.Minute):
+		// Timeout waiting for job creation
+		return fmt.Errorf("timeout waiting for job creation")
+	}
+
+	// Polling loop for job completion
+	if err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
 		if err := r.Get(ctx, jobKey, job); err != nil {
 			return false, err
 		}
@@ -596,9 +664,13 @@ func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migration
 func (r *MigrationRequestReconciler) stopPod(ctx context.Context, migrationRequest *apiv1.MigrationRequest) error {
 	pod := &corev1.Pod{}
 
-	if err := r.Get(ctx, types.NamespacedName{Namespace: migrationRequest.Namespace, Name: migrationRequest.Spec.PodName}, pod); err != nil {
+	err := r.Get(ctx, types.NamespacedName{Namespace: migrationRequest.Namespace, Name: migrationRequest.Spec.PodName}, pod)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			// Pod is alredy deleted
+			return nil
+		}
 		fmt.Println("stuck here")
-		return err
 	}
 
 	// Set the pod's deletion timestamp to stop it
@@ -607,22 +679,48 @@ func (r *MigrationRequestReconciler) stopPod(ctx context.Context, migrationReque
 		GracePeriodSeconds: &gracePeriodSeconds,
 	}
 
-	// delete pod and wait sync
-	deleteCompleted := r.deleteAndSync(ctx, pod, &deleteOptions)
+	err = r.Delete(ctx, pod, &deleteOptions)
+	if err != nil {
+		return err
+	}
 
-	time.Sleep(2 * time.Second)
+	podInformer := r.Informers.Core().V1().Pods().Informer()
+
+	if !podInformer.HasSynced() {
+		go podInformer.Run(nil)
+		if !cache.WaitForCacheSync(nil, podInformer.HasSynced) {
+			return fmt.Errorf("failed to sync informer cache")
+		}
+	}
+
+	// Set up an event handler to track the job creation
+	podDeleted := make(chan struct{})
+	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		DeleteFunc: func(obj interface{}) {
+			p := obj.(*corev1.Pod)
+			if p.Namespace == pod.Namespace && p.Name == pod.Name {
+				// Signal job creation
+				close(podDeleted)
+			}
+		},
+	})
+
+	// Wait for the informer cache to sync
+	if !cache.WaitForCacheSync(wait.NeverStop, r.Informers.Core().V1().Pods().Informer().HasSynced) {
+		return fmt.Errorf("failed to sync informer cache")
+	}
+
+	// Wait for the job creation
+	select {
+	case <-podDeleted:
+		// Job has been created, continue with the polling loop
+	case <-time.After(time.Minute):
+		// Timeout waiting for job creation
+		return fmt.Errorf("timeout waiting for job creation")
+	}
 
 	// Wait until the pod is deleted
-	err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
-		select {
-		case deleteErr := <-deleteCompleted:
-			if deleteErr != nil {
-				return false, deleteErr
-			}
-		default:
-			// pod deletion is still in progress, continue polling.
-		}
-
+	err = wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
 		err := r.Get(ctx, types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, pod)
 		if err != nil {
 			if errors.IsNotFound(err) {
@@ -636,57 +734,6 @@ func (r *MigrationRequestReconciler) stopPod(ctx context.Context, migrationReque
 	})
 
 	return err
-}
-
-func (r *MigrationRequestReconciler) createAndSync(ctx context.Context, obj client.Object) chan error {
-
-	createCompleted := make(chan error, 1)
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-		err := r.Create(ctx, obj)
-		createCompleted <- err
-	}()
-
-	// Wait for the createResource function to complete
-	wg.Wait()
-	return createCompleted
-}
-
-func (r *MigrationRequestReconciler) deleteAndSync(ctx context.Context, obj client.Object, deleteOptions client.DeleteOption) chan error {
-
-	deleteCompleted := make(chan error, 1)
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-		err := r.Delete(ctx, obj, deleteOptions)
-		deleteCompleted <- err
-	}()
-
-	// Wait for the createResource function to complete
-	wg.Wait()
-	return deleteCompleted
-}
-
-func (r *MigrationRequestReconciler) updateStatusAndSync(ctx context.Context, obj client.Object) chan error {
-
-	updateCompleted := make(chan error, 1)
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-		err := r.Status().Update(ctx, obj)
-		updateCompleted <- err
-	}()
-
-	// Wait for the createResource function to complete
-	wg.Wait()
-	return updateCompleted
 }
 
 func NewCachedResources() CachedResources {
