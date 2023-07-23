@@ -1,0 +1,41 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: snapshot-migration-sender
+spec:
+  template:
+    spec:
+      containers:
+      - name: zfs-container
+        image: thehamdiaz/zfs-ubuntu:v13.0
+        command: [
+          "/bin/sh",
+					"-c",
+					"sleep infinity",
+        ]
+        securityContext:
+          privileged: true
+        envFrom:
+        - configMapRef:
+            name: snapshot-migration-config
+        volumeMounts:
+        - name: ssh-keys
+          mountPath: "/etc/ssh-key"
+          readOnly: true
+      restartPolicy: Never
+      nodeSelector:
+        kubernetes.io/hostname: worker1
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - worker1
+      volumes:
+      - name: ssh-keys
+        secret:
+          secretName: ssh-keys-secret
+

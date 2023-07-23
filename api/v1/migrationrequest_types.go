@@ -30,14 +30,29 @@ type MigrationRequestSpec struct {
 
 	// Foo is an example field of MigrationRequest. Edit migrationrequest_types.go to remove/update
 
-	PodName string `json:"podName,omitempty"`
+	PodName                 string         `json:"podName,omitempty"`
+	DesiredSnapshotCount    int            `json:"desiredSnapshotCount,omitempty"`
+	SnapInterval            int            `json:"snapInterval,omitempty"`
+	Destination             DestinationDef `json:"destination,omitempty"`
+	VolumeSnapshotClassName string         `json:"volumeSnapshotClassName,omitempty"`
+}
+
+type DestinationDef struct {
+	User           string `json:"user,omitempty"`
+	RemotePool     string `json:"remotePool,omitempty"`
+	RemoteDataset  string `json:"remoteDataset,omitempty"`
+	RemoteHostIP   string `json:"remoteHostIP,omitempty"`
+	RemoteHostName string `json:"remoteHostName,omitempty"`
 }
 
 // MigrationRequestStatus defines the observed state of MigrationRequest
 type MigrationRequestStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	SnapshotCreated string `json:"snapshotCreated,omitempty"`
+	SnapshotCount          int    `json:"snapshotCreated,omitempty"`
+	ConfirmedSnapshotCount int    `json:"confirmedSnapshotCreated,omitempty"`
+	AllSnapshotsSent       string `json:"allSnapshotSent,omitempty"`
+	MigrationCompleted     string `json:"migrationComplete,omitempty"`
 }
 
 //+kubebuilder:object:root=true

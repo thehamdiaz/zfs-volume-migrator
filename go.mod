@@ -14,7 +14,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.9.1
 	github.com/onsi/gomega v1.27.4
 	github.com/openebs/zfs-localpv v1.9.3
-	k8s.io/api v0.27.2
+	k8s.io/api v0.27.3
 	k8s.io/apimachinery v0.27.2
 	k8s.io/client-go v11.0.1-0.20190409021438-1a26190bd76a+incompatible
 	sigs.k8s.io/controller-runtime v0.14.6

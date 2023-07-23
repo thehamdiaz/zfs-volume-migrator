@@ -1,0 +1,9 @@
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshot
+metadata:
+  name: migration-snapshot-1
+  namespace: default
+spec:
+  source:
+    persistentVolumeClaimName: csi-zfspv1
+  volumeSnapshotClassName: migration-vsc

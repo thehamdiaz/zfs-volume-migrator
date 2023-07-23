@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: snapshot-migration-sender-dep
+  labels:
+    app: sender
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sender
+  template:
+    metadata:
+      labels:
+        app: sender
+    spec:
+      containers:
+      - name: zfs-container
+        image: thehamdiaz/zfs-ubuntu:v10.0
+        securityContext:
+          privileged: true
+        env:
+        - name: SNAPSHOT
+          valueFrom:
+            configMapKeyRef:
+              name: snapshot-migration-config
+              key: snapshot
+        - name: USER
+          valueFrom:
+            configMapKeyRef:
+              name: snapshot-migration-config
+              key: user
+        - name: REMOTE_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: snapshot-migration-config
+              key: remoteHost
+        - name: POOL
+          valueFrom:
+            configMapKeyRef:
+              name: snapshot-migration-config
+              key: remotePool
+        - name: DATASET
+          valueFrom:
+            configMapKeyRef:
+              name: snapshot-migration-config
+              key: remoteDataset
+        - name: PREVIOUS
+          valueFrom:
+            configMapKeyRef:
+              name: snapshot-migration-config
+              key: previous
+        envFrom:
+        - configMapRef:
+            name: snapshot-migration-config
+        volumeMounts:
+        - name: ssh-keys
+          mountPath: "/etc/ssh-key"
+          readOnly: true
+      restartPolicy: Always
+      nodeSelector:
+        kubernetes.io/hostname: worker1
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - worker1
+      volumes:
+      - name: ssh-keys
+        secret:
+          secretName: ssh-keys-secret

@@ -1,18 +1,18 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: fio-restored
+  name: fio-restored1
   labels:
-    name: fio-restored
+    name: fio-restored1
 spec:
   replicas: 1
   selector:
     matchLabels:
-      name: fio-restored
+      name: fio-restored-testdataset1
   template:
     metadata:
       labels:
-        name: fio-restored
+        name: fio-restored-testdataset1
     spec:
       containers:
         - resources:
@@ -27,4 +27,4 @@ spec:
       volumes:
         - name: fio-vol
           persistentVolumeClaim:
-            claimName: restored-pvc
+            claimName: pvc-restored-testdataset1

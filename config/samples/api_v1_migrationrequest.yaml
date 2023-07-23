@@ -10,4 +10,13 @@ metadata:
   name: migrationrequest-sample
 spec:
   # TODO(user): Add fields here
-  podName: "fio"
+  podName: fio
+  desiredSnapshotCount: 3
+  snapInterval: 10
+  destination:
+    user: worker2
+    remotePool: zfspv-pool
+    remoteDataset: migrated-volume
+    remoteHostIP: "10.0.4.80"
+    remoteHostName: worker2
+  volumeSnapshotClassName: migration-vsc
