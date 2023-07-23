@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
@@ -29,6 +30,7 @@ import (
 	informers "k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/homedir"
 
 	clientv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned"
 	v1 "github.com/kubernetes-csi/external-snapshotter/client/v4/informers/externalversions/volumesnapshot/v1"
@@ -439,18 +441,18 @@ func (r *MigrationRequestReconciler) createAndEnsureVolumeSnapshotReadiness(ctx 
 	}
 
 	// Path to the kubeconfig file
-	kubeconfigPath := "/home/hamdi/.kube/config"
+	kubeconfigPath := filepath.Join(homedir.HomeDir(), ".kube", "config")
 
 	// Load the kubeconfig file
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {
-		// Handle error
+		fmt.Println(err.Error())
 	}
 
 	// Create the Kubernetes clientset
 	client, err := clientv1.NewForConfig(config)
 	if err != nil {
-		// Handle error
+		fmt.Println(err.Error())
 	}
 
 	resyncPeriod := 10 * time.Minute // Set the resync period for cache synchronization
@@ -641,7 +643,7 @@ func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migration
 	}
 
 	// Polling loop for job completion
-	if err := wait.PollImmediate(time.Second, time.Minute*5, func() (bool, error) {
+	if err := wait.PollImmediate(time.Second, time.Minute*10, func() (bool, error) { //bug: snapshot may take more than 10 minutes to send
 		if err := r.Get(ctx, jobKey, job); err != nil {
 			return false, err
 		}

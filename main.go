@@ -18,6 +18,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -133,18 +134,20 @@ func main() {
 
 func setupInformers() informers.SharedInformerFactory {
 	// Path to the kubeconfig file
-	kubeconfigPath := filepath.Join(homedir.HomeDir(), ".kube", "remoteconfig")
+	kubeconfigPath := filepath.Join(homedir.HomeDir(), ".kube", "config")
 
 	// Load the kubeconfig file
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {
 		// Handle error
+		fmt.Println(err.Error())
 	}
 
 	// Create the Kubernetes clientset
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		// Handle error
+		fmt.Println(err.Error())
 	}
 
 	informers := informers.NewSharedInformerFactory(clientset, 0)
