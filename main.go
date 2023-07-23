@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"os"
+	"path/filepath"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -26,6 +27,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/homedir"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -131,7 +133,7 @@ func main() {
 
 func setupInformers() informers.SharedInformerFactory {
 	// Path to the kubeconfig file
-	kubeconfigPath := "/home/hamdi/.kube/config"
+	kubeconfigPath := filepath.Join(homedir.HomeDir(), ".kube", "remoteconfig")
 
 	// Load the kubeconfig file
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
