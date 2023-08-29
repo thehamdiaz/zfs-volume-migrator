@@ -1,0 +1,18 @@
+# ConfigMap for RabbitMQ plugins
+apiVersion: v1  
+kind: ConfigMap
+metadata:
+  name: rabbitmq-plugins
+data:
+  enabled_plugins: |
+    [rabbitmq_management].
+
+---   
+# ConfigMap for admin credentials  
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rabbitmq-access 
+data:
+  username: admin
+  password: adminpassword

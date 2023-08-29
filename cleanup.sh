@@ -34,8 +34,11 @@ kubectl delete migrationrequest.api.k8s.zfs-volume-migrator.io --all
 # Delete all restorerequests.api.k8s.zfs-volume-migrator.io objects
 kubectl delete restorerequest.api.k8s.zfs-volume-migrator.io --all
 
-# Delete my-fio pod
-kubectl delete pod my-fio
+# Delete the migarte pod instance pod
+kubectl get pod --no-headers -o custom-columns=":metadata.name" |
+ awk '/^migrated-pod-/{print $1}' |
+ xargs -I {} kubectl delete pod {}
+
 
 # Delete all PVCs that start with "restored"
 kubectl get pvc --no-headers -o custom-columns=":metadata.name" |
@@ -52,6 +55,5 @@ kubectl get pv --no-headers -o custom-columns=":metadata.name" |
 
 
 #apply the diffrent test objects
-kubectl apply -f config/samples/api_v1_migrationrequest.yaml 
-kubectl apply -f test-manifests/test-openebszfs/
-kubectl apply -f test-manifests/random/my-fio.yaml
+kubectl delete -f evaluation/
+#kubectl apply -f evaluation/

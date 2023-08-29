@@ -1,0 +1,18 @@
+apiVersion: api.k8s.zfs-volume-migrator.io/v1
+kind: MigrationRequest
+metadata:
+  labels:
+    app.kubernetes.io/name: migrationrequest
+    app.kubernetes.io/created-by: zfs-volume-migrator
+  name: rabbitmq-migrationrequest
+spec:
+  podName: rabbitmq
+  desiredSnapshotCount: 3
+  snapInterval: 10
+  destination:
+    user: worker2
+    remotePool: zfspv-pool
+    remoteDataset: migrated-volume
+    remoteHostIP: "10.0.4.80"
+    remoteHostName: worker2
+  volumeSnapshotClassName: migration-vsc

@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: perftest-producer
+spec:
+  replicas: 1
+  selector:
+      matchLabels:
+        app: perftest-producer
+  template:
+    metadata:
+      labels:
+        app: perftest-producer
+    spec:
+      containers:
+      - name: perftest
+        image: pivotalrabbitmq/perf-test
+        command: ["/bin/bash"]
+        args: ["-c", "while true ;do sleep 50; done"]
+        #args:
+        #- producer
+        #- --broker-url amqp://my-rabbitmq:5672
+        #- --rate=100
+        #- --durable-publisher        
+        volumeMounts:
+        - mountPath: /opt/perftest/data
+          name: perftest-data
+      volumes:
+      - name: perftest-data
+        persistentVolumeClaim:
+          claimName: perftest-data
+
+
+#java -jar perf-test.jar -x 1 -u "migration-test" -f persistent --json-body --size 128000 -r 500 --use-millis --uri amqp://admin:adminpassword@rabbitmq-amqp-service:5672
+#java -jar perf-test.jar -x 10  --queue-pattern 'perf-test-%d' --queue-pattern-from 1 --queue-pattern-to 10 --flag persistent --queue-args x-queue-type=quorum --auto-delete false --json-body --size 128000  --use-millis --uri amqp://admin:adminpassword@rabbitmq-amqp-service:5672
+#java -jar perf-test.jar -x 1  -r 100 -u 'perf-test-2g' --flag persistent --queue-args x-queue-type=quorum --auto-delete false --json-body --size 128000  --use-millis --uri amqp://admin:adminpassword@rabbitmq-amqp-service:5672

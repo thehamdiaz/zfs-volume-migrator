@@ -1,0 +1,69 @@
+# PersistentVolumeClaims 
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rabbitmq-data-3g
+spec:
+  storageClassName: openebs-zfspv-retain
+  accessModes: 
+  - ReadWriteOnce 
+  resources:
+    requests:
+      storage: 3Gi
+      
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rabbitmq-data-5g
+spec:
+  storageClassName: openebs-zfspv-retain
+  accessModes: 
+  - ReadWriteOnce 
+  resources:
+    requests:
+      storage: 5Gi
+      
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rabbitmq-data-20g
+spec:
+  storageClassName: openebs-zfspv-retain
+  accessModes: 
+  - ReadWriteOnce 
+  resources:
+    requests:
+      storage: 20Gi
+      
+---
+
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: perftest-data  
+spec:
+  storageClassName: openebs-zfspv-retain
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: rabbitmq-data-2g
+spec:
+  storageClassName: openebs-zfspv-retain
+  accessModes: 
+  - ReadWriteOnce 
+  resources:
+    requests:
+      storage: 2Gi
