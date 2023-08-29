@@ -52,6 +52,7 @@ type MigrationRequestStatus struct {
 	SnapshotCount          int    `json:"snapshotCreated,omitempty"`
 	ConfirmedSnapshotCount int    `json:"confirmedSnapshotCreated,omitempty"`
 	AllSnapshotsSent       string `json:"allSnapshotSent,omitempty"`
+	RestorationCompleted   string `json:"restorationComplete,omitempty"`
 	MigrationCompleted     string `json:"migrationComplete,omitempty"`
 }
 

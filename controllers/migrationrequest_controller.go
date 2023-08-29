@@ -212,7 +212,7 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			}
 
 			// This will be created in the remote node trigerring the restoring controller
-			_, err = r.createRestoreRequest(ctx, migrationRequest)
+			_, err = r.createRestoreRequest(ctx, migrationRequest, r.CachedData[migrationRequest.Name].Pod)
 			if err != nil {
 				l.Error(err, "failed to create restoreRequest")
 				return ctrl.Result{}, err
@@ -236,7 +236,7 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	return ctrl.Result{}, nil
 }
 
-func (r *MigrationRequestReconciler) createRestoreRequest(ctx context.Context, migrationRequest *apiv1.MigrationRequest) (*apiv1.RestoreRequest, error) {
+func (r *MigrationRequestReconciler) createRestoreRequest(ctx context.Context, migrationRequest *apiv1.MigrationRequest, sourcePod *corev1.Pod) (*apiv1.RestoreRequest, error) {
 	/*
 		// Path to the kubeconfig file
 		kubeconfig := filepath.Join(homedir.HomeDir(), ".kube", "remoteconfig")
@@ -281,7 +281,15 @@ func (r *MigrationRequestReconciler) createRestoreRequest(ctx context.Context, m
 		},
 	}
 
+	pod := r.populateMigratedPod(ctx, restoreReq, sourcePod)
+
 	/*
+		err = kubeClient.Create(ctx, pod)
+		if err != nil {
+			// Handle the error
+			return nil, err
+		}
+
 		err = kubeClient.Create(ctx, restoreReq)
 		if err != nil {
 			// Handle the error
@@ -289,7 +297,13 @@ func (r *MigrationRequestReconciler) createRestoreRequest(ctx context.Context, m
 		}
 	*/
 
-	err := r.Create(ctx, restoreReq)
+	err := r.Create(ctx, pod)
+	if err != nil {
+		// Handle the error
+		return nil, err
+	}
+
+	err = r.Create(ctx, restoreReq)
 	if err != nil {
 		// Handle the error
 		return nil, err
@@ -736,6 +750,26 @@ func (r *MigrationRequestReconciler) stopPod(ctx context.Context, migrationReque
 	})
 
 	return err
+}
+
+func (r *MigrationRequestReconciler) populateMigratedPod(ctx context.Context, restoreReq *apiv1.RestoreRequest, sourcePod *corev1.Pod) *corev1.Pod {
+
+	volumes := sourcePod.Spec.Volumes
+	volumes[0].VolumeSource.PersistentVolumeClaim.ClaimName = restoreReq.Spec.Names.PVCName
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "migrated-pod-" + sourcePod.ObjectMeta.Name,
+			Namespace: sourcePod.ObjectMeta.Namespace,
+			Labels:    sourcePod.Labels,
+		},
+		Spec: corev1.PodSpec{
+			Containers:    sourcePod.Spec.Containers,
+			RestartPolicy: sourcePod.Spec.RestartPolicy,
+			Volumes:       volumes,
+		},
+	}
+	return pod
 }
 
 func NewCachedResources() CachedResources {

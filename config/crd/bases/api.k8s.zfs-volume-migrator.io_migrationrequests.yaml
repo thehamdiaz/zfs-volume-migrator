@@ -66,6 +66,8 @@ spec:
                 type: integer
               migrationComplete:
                 type: string
+              restorationComplete:
+                type: string
               snapshotCreated:
                 description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
                   of cluster Important: Run "make" to regenerate code after modifying

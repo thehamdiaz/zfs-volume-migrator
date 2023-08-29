@@ -285,7 +285,7 @@ func (r *RestoreRequestReconciler) updateMigrationRequestStatus(ctx context.Cont
 	}
 
 	// Update the MigrationRequest Status
-	migrationRequest.Status.MigrationCompleted = "true"
+	migrationRequest.Status.RestorationCompleted = "True"
 
 	err = r.Status().Update(ctx, migrationRequest)
 	if err != nil {
