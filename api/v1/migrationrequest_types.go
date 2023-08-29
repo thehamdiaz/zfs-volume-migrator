@@ -17,6 +17,8 @@ limitations under the License.
 package v1
 
 import (
+	"time"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -49,11 +51,13 @@ type DestinationDef struct {
 type MigrationRequestStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	SnapshotCount          int    `json:"snapshotCreated,omitempty"`
-	ConfirmedSnapshotCount int    `json:"confirmedSnapshotCreated,omitempty"`
-	AllSnapshotsSent       string `json:"allSnapshotSent,omitempty"`
-	RestorationCompleted   string `json:"restorationComplete,omitempty"`
-	MigrationCompleted     string `json:"migrationComplete,omitempty"`
+	SnapshotCount          int           `json:"snapshotCreated,omitempty"`
+	ConfirmedSnapshotCount int           `json:"confirmedSnapshotCreated,omitempty"`
+	AllSnapshotsSent       string        `json:"allSnapshotSent,omitempty"`
+	RestorationCompleted   string        `json:"restorationComplete,omitempty"`
+	MigrationCompleted     string        `json:"migrationComplete,omitempty"`
+	MigrationTime          time.Duration `json:"migrationTime,omitempty"`
+	Downtime               time.Duration `json:"downTime,omitempty"`
 }
 
 //+kubebuilder:object:root=true
