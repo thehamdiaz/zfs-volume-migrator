@@ -10,10 +10,7 @@ chmod 400 /root/.ssh/id_rsa
 # Check if previous snapshot is "None"
 if [[ $PREVIOUS == "None" ]]; then
     # Send the snapshot to the remote node
-    zfs send $SNAPSHOT | ssh -o StrictHostKeyChecking=no $USER@$REMOTEHOSTIP zfs receive -u $REMOTEPOOL/$REMOTEDATASET
+    zfs send $SNAPSHOT | pv -L 12500000 | ssh -o StrictHostKeyChecking=no $USER@$REMOTEHOSTIP zfs receive -u $REMOTEPOOL/$REMOTEDATASET
 else
-    zfs send -i $PREVIOUS $SNAPSHOT | ssh -o StrictHostKeyChecking=no $USER@$REMOTEHOSTIP zfs receive -u $REMOTEPOOL/$REMOTEDATASET
+    zfs send -i $PREVIOUS $SNAPSHOT | pv -L 12500000 | ssh -o StrictHostKeyChecking=no $USER@$REMOTEHOSTIP zfs receive -u $REMOTEPOOL/$REMOTEDATASET
 fi
-
-# Sleep for testing
-# sleep infinity

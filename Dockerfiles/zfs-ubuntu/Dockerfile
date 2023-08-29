@@ -12,6 +12,12 @@ RUN apt-get update && \
     openssh-client && \
     rm -rf /var/lib/apt/lists/*
 
+#install pv 
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    pv && \
+    rm -rf /var/lib/apt/lists/*
+
 RUN mkdir -p /root/.ssh 
 RUN chmod 600 /root/.ssh 
 COPY entrypoint.sh /usr/local/bin/

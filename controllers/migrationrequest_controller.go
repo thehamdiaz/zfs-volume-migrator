@@ -19,7 +19,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"time"
 
 	snapv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/apis/volumesnapshot/v1"
@@ -30,7 +29,6 @@ import (
 	informers "k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/util/homedir"
 
 	clientv1 "github.com/kubernetes-csi/external-snapshotter/client/v4/clientset/versioned"
 	v1 "github.com/kubernetes-csi/external-snapshotter/client/v4/informers/externalversions/volumesnapshot/v1"
@@ -65,6 +63,8 @@ type CachedResources struct {
 	ConfigMap             *corev1.ConfigMap
 	Secret                *corev1.Secret
 	PreviousSnapshot      *snapv1.VolumeSnapshot
+	startMigrationTime    *time.Time
+	startDownTime         *time.Time
 }
 
 //+kubebuilder:rbac:groups=api.k8s.zfs-volume-migrator.io,resources=migrationrequests,verbs=get;list;watch;create;update;patch;delete
@@ -94,9 +94,26 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 
-	// Check if the RestoreRequest is already completed (This field is set by the restore Controller)
+	// Check if the migration process is already completed
 	if migrationRequest.Status.MigrationCompleted == "True" {
 		l.Info("MigrationRequest is already completed")
+		return ctrl.Result{}, nil
+	}
+
+	// Check if the RestoreRequest is already completed (This field is set by the restore Controller)
+	if migrationRequest.Status.RestorationCompleted == "True" {
+		// Recording migration time and downtime
+		migrationRequest.Status.Downtime = time.Now().Sub(*r.CachedData[migrationRequest.Name].startDownTime)
+		migrationRequest.Status.MigrationTime = time.Now().Sub(*r.CachedData[migrationRequest.Name].startMigrationTime)
+
+		// indicate the completion of the Migration
+		migrationRequest.Status.MigrationCompleted = "True"
+
+		if err := r.Status().Update(ctx, migrationRequest); err != nil {
+			l.Error(err, "failed to update migrationRequest status")
+			return ctrl.Result{}, err
+		}
+
 		return ctrl.Result{}, nil
 	}
 	// Check if all the snapshots have been sent (sending completed)
@@ -149,6 +166,12 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			l.Error(err, "unable to create the Secret")
 			return ctrl.Result{}, err
 		}
+
+		// Start migration timer
+		start := time.Now()
+		cachedResources.startMigrationTime = &start
+		//fmt.Println("start migationtime:", start)
+
 		r.CachedData[migrationRequest.Name] = cachedResources
 	}
 
@@ -163,14 +186,19 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			snapshot = r.CachedData[migrationRequest.Name].PreviousSnapshot
 			new = false
 		} else {
-			//last snapshot to be sent
+			// Last snapshot to be sent
 			if migrationRequest.Status.ConfirmedSnapshotCount == migrationRequest.Spec.DesiredSnapshotCount-1 {
-				fmt.Println("here")
 				err = r.stopPod(ctx, migrationRequest)
 				if err != nil {
 					l.Error(err, "failed to stop the pod")
 					return ctrl.Result{}, err
 				}
+				// Start the downtime timer
+				CachedResources := r.CachedData[migrationRequest.Name]
+				start := time.Now()
+				CachedResources.startDownTime = &start
+				r.CachedData[migrationRequest.Name] = CachedResources
+				//fmt.Println("start downtime:", start)
 			}
 			snapshot, err = r.createAndEnsureVolumeSnapshotReadiness(ctx, migrationRequest)
 			if err != nil {
@@ -186,6 +214,9 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			}
 			new = true
 		}
+
+		time.Sleep(time.Second)
+
 		err = r.sendSnapshot(ctx, migrationRequest, snapshot, new)
 		if err != nil {
 			l.Error(err, "failed to send snapshot")
@@ -219,7 +250,7 @@ func (r *MigrationRequestReconciler) Reconcile(ctx context.Context, req ctrl.Req
 			}
 		} else {
 			// Wait for the specified interval
-			time.Sleep(time.Second * time.Duration(migrationRequest.Spec.SnapInterval))
+			//time.Sleep(time.Second * time.Duration(migrationRequest.Spec.SnapInterval))
 			// Enqueue the resource for the next reconciliation
 			return ctrl.Result{Requeue: true}, nil
 		}
@@ -455,18 +486,18 @@ func (r *MigrationRequestReconciler) createAndEnsureVolumeSnapshotReadiness(ctx 
 	}
 
 	// Path to the kubeconfig file
-	kubeconfigPath := filepath.Join(homedir.HomeDir(), ".kube", "config")
+	kubeconfigPath := "/home/hamdi/.kube/config"
 
 	// Load the kubeconfig file
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {
-		fmt.Println(err.Error())
+		// Handle error
 	}
 
 	// Create the Kubernetes clientset
 	client, err := clientv1.NewForConfig(config)
 	if err != nil {
-		fmt.Println(err.Error())
+		// Handle error
 	}
 
 	resyncPeriod := 10 * time.Minute // Set the resync period for cache synchronization
@@ -523,6 +554,21 @@ func (r *MigrationRequestReconciler) createAndEnsureVolumeSnapshotReadiness(ctx 
 }
 
 func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migrationRequest *apiv1.MigrationRequest, vs *snapv1.VolumeSnapshot, new bool) error {
+
+	if vs.Status == nil {
+		fmt.Println("this is why")
+	}
+
+	fmt.Println(vs.Status.BoundVolumeSnapshotContentName)
+	// Ensure vs.Status.BoundVolumeSnapshotContentName is not nil or empty
+	if vs.Status.BoundVolumeSnapshotContentName == nil {
+		return fmt.Errorf("BoundVolumeSnapshotContentName is nil")
+	}
+
+	// Check if the name is empty
+	if *vs.Status.BoundVolumeSnapshotContentName == "" {
+		return fmt.Errorf("BoundVolumeSnapshotContentName is empty")
+	}
 	// Fetch the VolumeSnapshotContent
 	var vsContent snapv1.VolumeSnapshotContent
 	err := r.Get(ctx, types.NamespacedName{Name: *vs.Status.BoundVolumeSnapshotContentName}, &vsContent)
@@ -657,7 +703,7 @@ func (r *MigrationRequestReconciler) sendSnapshot(ctx context.Context, migration
 	}
 
 	// Polling loop for job completion
-	if err := wait.PollImmediate(time.Second, time.Minute*10, func() (bool, error) { //bug: snapshot may take more than 10 minutes to send
+	if err := wait.PollImmediate(time.Second, time.Minute*100, func() (bool, error) {
 		if err := r.Get(ctx, jobKey, job); err != nil {
 			return false, err
 		}
